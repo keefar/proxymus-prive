@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.python-version
+*.egg-info/
+build/
+dist/
+
+# MLX / model cache
+models/
+.cache/
+*.safetensors
+*.gguf
+
+# Benchmarking outputs
+benchmarks/results/
+*.jsonl
+*.csv
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Secrets / local
+.env
+.env.*
+!.env.example
+secrets/
+fixtures/private/
