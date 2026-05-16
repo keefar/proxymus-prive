@@ -16,7 +16,7 @@ placeholders at the tool boundary** — the last is the open problem.
 | Project | Stack | Stars | License | Multi-agent | Reversible | Local LLM | MLX | Tool-call resolution |
 |---|---|---:|---|:-:|:-:|:-:|:-:|:-:|
 | [DontFeedTheAI][dfta] | Python / FastAPI | 544 | MIT | ❌ Claude Code | ✅ | ✅ Ollama | ❌ | ❌ |
-| [PasteGuard][pg] | TypeScript / Bun | 630 | Apache-2.0 | ✅ broadest | ❌ (per fetch) | ❌ Presidio | ❌ | ❌ |
+| [PasteGuard][pg] | TypeScript / Bun | 630 | Apache-2.0 | ✅ broadest | ✅ (source-verified 2026-05-17, incl. SSE) | ❌ Presidio | ❌ | ❌ |
 | [contextio][ctx] | TypeScript | 24 | MIT | ✅ | ✅ | ❌ regex only | ❌ | ❌ |
 | [LLM-Redactor][lr] | Go | 5 | (unclear) | partial | ❌ | ❌ | ❌ | ❌ |
 | [claude-code-local][ccl] | Python / MLX | n/a | n/a | ❌ Claude Code | n/a — full local backend | ✅ (full model) | ✅ | n/a |
@@ -53,10 +53,19 @@ placeholders at the tool boundary** — the last is the open problem.
 - **Coverage:** ChatGPT, Claude (web + Code), Cursor, Copilot, Windsurf, Gemini, Open WebUI,
   LibreChat. Browser-extension beta.
 - **Detection:** Microsoft Presidio — 30+ data types, 24 languages, NER + pattern.
-- **Limits:** Per fetched README, masking is **not reversible** in the proxy-LLM round-trip
-  sense (verify before forking). No local generative LLM. No MLX. No tool-call resolution.
-- **Verdict:** Best **breadth of agent support** to draw from; would need significant
-  surgery to add MLX-LLM + reversible round-trip + tool-call resolution.
+- **Limits:** No local generative LLM. No MLX. No tool-call resolution.
+- **Reversibility — source-verified 2026-05-17 (apf-8w3):** PasteGuard **IS reversible.**
+  `src/masking/context.ts` exposes a `PlaceholderContext { mapping }` and
+  `restorePlaceholders(text, ctx)` that walks the mapping and replaces all
+  placeholder occurrences with their originals. Plus SSE-aware streaming via
+  `processStreamChunk` + `flushBuffer` with buffering for placeholders that
+  span chunk boundaries — more mature than our current non-streaming proxy.
+  The earlier note (from the kickoff session, "per fetched README, not
+  reversible") was wrong — the README phrasing implied a one-way mask, but
+  the code does the round-trip.
+- **Verdict:** Best **breadth of agent support** to draw from; would still
+  need surgery to add MLX-LLM + tool-call resolution. SSE reverse-streaming
+  is genuinely worth borrowing/learning from for our proxy.
 
 ### contextio — cleanest proxy architecture
 - **Architecture:** Local HTTP reverse-proxy on :4040, TypeScript, **zero npm deps** in core.
