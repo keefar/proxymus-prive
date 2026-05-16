@@ -205,4 +205,84 @@ becomes worth inheriting once those unknowns are retired.
 
 ## Decision log
 
-- *(empty — first real decision is "which option" after the model benchmark runs)*
+### 2026-05-16 — Stage-2 model benchmark results: no single-model winner
+
+Ran three MLX-resident candidates against the 50-fixture set (`fixtures/*.jsonl`).
+Full numbers in `benchmarks/results/`. Summary:
+
+| Model                       | tier-recall | tier-precision | DE-rec | EN-rec | p95 ms | RAM   |
+|-----------------------------|:-----------:|:--------------:|:------:|:------:|:------:|:-----:|
+| Nemotron MLX 8bit (token-class) | 0.290 | 0.551 | 0.258 | 0.320 |  187 | 1.6 GB |
+| Anonymizer-SLM 1.7B 4bit (gen)  | 0.355 | 0.516 | 0.382 | 0.330 | 2958 | 1.3 GB |
+| Qwen3-1.7B 4bit (gen, zero-shot) | 0.226 | 0.712 | 0.213 | 0.237 | 1009 | 1.3 GB |
+| regex baseline (floor)            | 0.194 | 0.900 | 0.112 | 0.268 |  <1  |  —     |
+
+**Headline finding: no single Stage-2 model hits the ≥0.95 recall criterion.**
+The best (Anonymizer-SLM) tops out at 0.355 tier-recall. The criterion isn't off
+by a tuning factor — it's off by a category-of-approach factor.
+
+**What each model is good at:**
+- **Nemotron** — fastest by far (p95 187ms); strong on structurally regular
+  Tier-A spans (emails, names, addresses). Useless for German content beyond
+  emails (documented English-only). Useless for implicit/paraphrased PII.
+- **Anonymizer-SLM** — best Tier-A recall, especially German (0.42 / 0.38 DE
+  recall). Strongest on "natural-language" PII. Latency disqualifies for hot
+  path (2.96s p95 vs. 1.5s budget).
+- **Qwen3 zero-shot** — highest precision; lowest recall. Confirms PII fine-tune
+  matters: same base as Anonymizer-SLM, with fine-tune adds 0.13 recall.
+- **Regex** — high precision floor; complementary to all three on Tier-B/-C
+  (the SLMs miss paths/IPs/keys; regex catches them).
+
+**Categories all three models miss systematically:**
+- Implicit PII / paraphrased identifiers (10 fixtures with `IMPLICIT_PII`
+  spans — combined recall < 0.1).
+- Health context not anchored on the word "Dr." or a medication name (German
+  Arzttermine).
+- Relationships ("der Kollege aus dem Controlling", "meine Schwiegermutter").
+- Tier-B operational identifiers when not in structured config (e.g. a path
+  mentioned in narrative).
+- Tier-C secrets without the classic prefix (`sk-`, `ghp_`, …).
+
+**Decision — Stage-2 engine pick is deferred.** No model in isolation is the
+answer. Two viable architectures remain, both empirically grounded by this
+benchmark:
+
+1. **Stage 1+2 ensemble (recommended)**:
+   - Stage 1 = regex + Nemotron (low confidence threshold) — fast, structural,
+     covers Tier-B/-C and the "easy" Tier-A.
+   - Stage 2 = Anonymizer-SLM, called only on segments where Stage 1 fires
+     low-confidence or on text categories Stage 1 is known weak on (free-form
+     prose, calendar entries, notes). Per-segment latency stays under budget
+     because Stage 2 is not invoked for every span.
+   - Open question: how to gate Stage-2 invocation cleanly. Probably a
+     heuristic on input shape (free-form text vs. structured config/log).
+
+2. **Re-scope the recall criterion**:
+   - 0.95 across the full fixture mix may be the wrong target — the
+     adversarial-paraphrase fixtures are inherently hard for a 1.7B SLM. A
+     defensible alternative: 0.95 on **explicit Tier-A spans** (PERSON, EMAIL,
+     PHONE, ADDRESS, HEALTH with anchor words, DATE) plus 0.80 on
+     IMPLICIT_PII, plus 0.99 on Tier-C (the criticality leans here anyway).
+   - This would unblock single-model paths if accompanied by clear UX about
+     the IMPLICIT_PII coverage limit.
+
+**Engineering follow-ups recorded in beads** (not done yet):
+- `apf-fu6` — Tool-call resolution prototype (now informed by Tier-B
+  detection floor: Nemotron + regex covers Tier-B well enough at p95 < 200ms
+  to make boundary resolution feasible).
+- Future: GLiNER multilingual as a fourth candidate for Stage 1 — was in
+  `MODELS.md` from the start, not benchmarked yet because the Stage-2 question
+  was meant to come first. Now the question is "what fills the recall gap on
+  implicit PII for the ensemble", which GLiNER specifically may or may not
+  answer.
+- Future: BF16 variant of Nemotron — quantization-loss check. Unlikely to
+  bridge the recall gap but cheap to verify.
+
+**What the benchmark proved (and what it didn't):**
+- ✅ MLX latency + RAM budgets are achievable.
+- ✅ Tooling pipeline (fixtures → harness → adapters → metrics) works.
+- ✅ German support is a real differentiator — Nemotron eliminated by it.
+- ✅ The Tier model is the right framing — performance differs sharply across
+  tiers per model.
+- ❌ "Pick the best stage-2 model" is not the right question; the empirical
+  shape rejects it.

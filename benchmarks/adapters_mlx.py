@@ -1,0 +1,364 @@
+"""MLX-backed detector adapters.
+
+Each adapter wraps a different model and maps its native label space to
+the project's `docs/MODELS.md` label inventory. Tier-equality (our primary
+metric) tolerates imperfect label mappings as long as the *tier* survives.
+
+Adapters lazy-load weights in `warmup()` so harness latency measurements
+on `detect()` reflect steady-state behaviour, not first-call cold-start.
+"""
+from __future__ import annotations
+
+import os
+import time
+from typing import Iterable
+
+from .adapters import LABEL_TIER, Span
+
+
+# ---- Nemotron Privacy Filter MLX -----------------------------------------
+
+# Nemotron emits 55 PII span classes; our inventory has ~25. This maps each
+# Nemotron entity_group to the most defensible label in our inventory.
+# Tier-equality scoring is the primary metric, so the *tier* assignment is
+# what matters most — label-equality is a stricter diagnostic.
+NEMOTRON_LABEL_MAP: dict[str, str] = {
+    # Personal identifiers
+    "first_name": "PERSON",
+    "last_name": "PERSON",
+    "user_name": "PERSON",
+    "gender": "NOTE_SENSITIVE",
+    "age": "NOTE_SENSITIVE",
+    "date_of_birth": "DATE",
+    # Contact
+    "email": "EMAIL",
+    "phone_number": "PHONE",
+    "fax_number": "PHONE",
+    "street_address": "ADDRESS",
+    "city": "LOCATION",
+    "state": "LOCATION",
+    "country": "LOCATION",
+    "county": "LOCATION",
+    "postcode": "ADDRESS",
+    "coordinate": "LOCATION",
+    # Gov/Legal IDs → Tier A sensitive identifier
+    "ssn": "NOTE_SENSITIVE",
+    "national_id": "NOTE_SENSITIVE",
+    "tax_id": "NOTE_SENSITIVE",
+    "certificate_license_number": "NOTE_SENSITIVE",
+    # Financial
+    "account_number": "FINANCIAL",
+    "bank_routing_number": "FINANCIAL",
+    "credit_debit_card": "FINANCIAL",
+    "cvv": "PASSWORD",  # access control → Tier C
+    "pin": "PASSWORD",
+    "swift_bic": "FINANCIAL",
+    # Medical
+    "medical_record_number": "HEALTH",
+    "health_plan_beneficiary_number": "HEALTH",
+    "blood_type": "HEALTH",
+    # Workplace
+    "company_name": "ORG",
+    "occupation": "NOTE_SENSITIVE",
+    "employee_id": "NOTE_SENSITIVE",
+    "customer_id": "NOTE_SENSITIVE",
+    "employment_status": "NOTE_SENSITIVE",
+    "education_level": "NOTE_SENSITIVE",
+    # Online
+    "url": "URL_LOCAL",
+    "ipv4": "IP",
+    "ipv6": "IP",
+    "mac_address": "IP",
+    "http_cookie": "TOKEN",
+    "api_key": "API_KEY",
+    "password": "PASSWORD",
+    "device_identifier": "HOSTNAME",
+    # Demographic — Tier A sensitive
+    "race_ethnicity": "NOTE_SENSITIVE",
+    "religious_belief": "NOTE_SENSITIVE",
+    "political_view": "NOTE_SENSITIVE",
+    "sexuality": "NOTE_SENSITIVE",
+    "language": "NOTE_SENSITIVE",
+    # Vehicles
+    "license_plate": "NOTE_SENSITIVE",
+    "vehicle_identifier": "NOTE_SENSITIVE",
+    # Time
+    "date": "DATE",
+    "date_time": "DATE",
+    "time": "DATE",
+    # Misc
+    "biometric_identifier": "HEALTH",
+    "unique_id": "NOTE_SENSITIVE",
+}
+
+
+class NemotronAdapter:
+    name = "nemotron-mlx-8bit"
+    hf_id = "OpenMed/privacy-filter-nemotron-mlx-8bit"
+
+    def __init__(self, min_score: float = 0.6) -> None:
+        self.min_score = min_score
+        self._pipe = None
+
+    def warmup(self) -> None:
+        from huggingface_hub import snapshot_download
+        from openmed.mlx.inference import PrivacyFilterMLXPipeline
+        path = snapshot_download(self.hf_id)
+        self._pipe = PrivacyFilterMLXPipeline(path)
+        # Prime caches by running on a tiny string — first call is slower.
+        self._pipe("Hi.")
+
+    def detect(self, text: str) -> list[Span]:
+        assert self._pipe is not None, "call warmup() before detect()"
+        raw = self._pipe(text)
+        spans: list[Span] = []
+        for ent in raw:
+            score = float(ent.get("score", 0.0))
+            if score < self.min_score:
+                continue
+            group = ent.get("entity_group", "")
+            label = NEMOTRON_LABEL_MAP.get(group)
+            if label is None:
+                continue
+            tier = LABEL_TIER.get(label)
+            if tier is None:
+                continue
+            start = int(ent["start"])
+            end = int(ent["end"])
+            if end <= start:
+                continue
+            spans.append(Span(start=start, end=end, label=label, tier=tier))
+        return spans
+
+
+# ---- Anonymizer-SLM (eternisai/Anonymizer-1.7B, MLX-converted) -----------
+
+# Anonymizer-SLM is generative: it returns {original, replacement} pairs with
+# no offsets and no explicit category. We:
+#   1. Find each `original` in the input text (first occurrence) → span offsets.
+#   2. Infer a label from the original's surface form using regex patterns
+#      (re-used from the RegexBaseline). Anything that matches no pattern
+#      falls back to NOTE_SENSITIVE — Tier-A catch-all.
+# This means label-equality recall will be limited, but tier-equality is fair
+# game (Anonymizer is explicitly a Tier-A content-PII tool).
+
+ANONYMIZER_TASK = (
+    "You are an anonymizer. Identify all personally identifiable information "
+    "(PII) in the user message and replace each occurrence with a fictitious but "
+    "plausible substitute. Use the replace_entities tool to return your "
+    "replacements. If a value is PII but should be kept verbatim, still include "
+    "it with original == replacement."
+)
+
+ANONYMIZER_TOOLS = [{
+    "type": "function",
+    "function": {
+        "name": "replace_entities",
+        "description": "Replace PII entities with anonymized versions",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "replacements": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "original": {"type": "string"},
+                            "replacement": {"type": "string"},
+                        },
+                        "required": ["original", "replacement"],
+                    },
+                }
+            },
+            "required": ["replacements"],
+        },
+    },
+}]
+
+
+def _infer_label(text: str) -> str:
+    """Heuristic label inference from the surface form of a flagged original."""
+    from .adapters import RegexBaseline
+    for label, rx in RegexBaseline.PATTERNS:
+        if rx.search(text):
+            return label
+    return "NOTE_SENSITIVE"
+
+
+def _parse_tool_call(raw: str) -> list[dict]:
+    """Pull the JSON arg list out of a <tool_call> or <|tool_call|> envelope."""
+    import json
+    import re
+    m = re.search(r"<\|?tool_call\|?>\s*(\{.*?\})\s*</?\|?tool_call\|?>",
+                  raw, re.DOTALL)
+    if not m:
+        # Try a looser match — sometimes the model emits a bare JSON object.
+        m = re.search(r'\{\s*"name"\s*:\s*"replace_entities".*\}', raw, re.DOTALL)
+        if not m:
+            return []
+        payload = m.group(0)
+    else:
+        payload = m.group(1)
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return []
+    return data.get("arguments", {}).get("replacements", []) or []
+
+
+class AnonymizerSLMAdapter:
+    name = "anonymizer-slm-1.7b-4bit"
+    mlx_path = "/Users/chris/.cache/huggingface/mlx-models/Anonymizer-1.7B-4bit"
+
+    def __init__(self, max_tokens: int = 400) -> None:
+        self.max_tokens = max_tokens
+        self._model = None
+        self._tok = None
+
+    def warmup(self) -> None:
+        from mlx_lm import load, generate
+        self._model, self._tok = load(self.mlx_path)
+        self._generate = generate
+        # Prime the model with a tiny call so detect() latency is warm.
+        self._run("Hi.")
+
+    def _run(self, text: str) -> str:
+        prompt = self._tok.apply_chat_template(
+            [
+                {"role": "system", "content": ANONYMIZER_TASK},
+                {"role": "user", "content": text + "\n/no_think"},
+            ],
+            tools=ANONYMIZER_TOOLS,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        return self._generate(self._model, self._tok,
+                              prompt=prompt, max_tokens=self.max_tokens, verbose=False)
+
+    def detect(self, text: str) -> list[Span]:
+        raw = self._run(text)
+        replacements = _parse_tool_call(raw)
+        spans: list[Span] = []
+        used: list[tuple[int, int]] = []
+        for r in replacements:
+            original = r.get("original", "")
+            if not original:
+                continue
+            # First occurrence of the original in text. Skip ranges already used.
+            search_from = 0
+            while True:
+                idx = text.find(original, search_from)
+                if idx < 0:
+                    break
+                end = idx + len(original)
+                if not any(s < end and e > idx for s, e in used):
+                    break
+                search_from = idx + 1
+            if idx < 0:
+                continue
+            label = _infer_label(original)
+            tier = LABEL_TIER.get(label, "A")
+            spans.append(Span(start=idx, end=end, label=label, tier=tier))
+            used.append((idx, end))
+        spans.sort(key=lambda s: s.start)
+        return spans
+
+
+# ---- Qwen3-1.7B-4bit (generic generative fallback, mlx-community) --------
+
+# Qwen3 has no PII fine-tune; we prompt it to emit a JSON span list and parse.
+# Same offset-recovery + label inference trick as AnonymizerSLM.
+
+QWEN_TASK = (
+    "You detect personally identifiable information (PII) in text. Output ONLY "
+    "a JSON object on a single line with the schema:\n"
+    '{"pii":[{"text":"<exact substring>","type":"<one of: PERSON, EMAIL, '
+    "PHONE, ADDRESS, LOCATION, ORG, DATE, APPOINTMENT, HEALTH, RELATIONSHIP, "
+    "FINANCIAL, NOTE_SENSITIVE, IMPLICIT_PII, PATH, FILENAME, HOSTNAME, IP, "
+    "URL_LOCAL, CREDENTIAL, API_KEY, PRIVATE_KEY, PASSWORD, TOKEN, "
+    'CONNECTION_STRING>"}]}\n'
+    'Use the exact original substring from the input. Output {"pii":[]} if none.'
+)
+
+
+def _parse_qwen_json(raw: str) -> list[dict]:
+    import json
+    import re
+    # Strip <think> blocks; pick the first JSON object containing "pii".
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL)
+    # Find balanced JSON object — search forward from the first '{'.
+    for m in re.finditer(r"\{[^{}]*\"pii\"\s*:\s*\[(?:[^][]|\[[^]]*\])*\][^{}]*\}",
+                         raw, re.DOTALL):
+        try:
+            data = json.loads(m.group(0))
+            return data.get("pii", []) or []
+        except json.JSONDecodeError:
+            continue
+    return []
+
+
+class Qwen3Adapter:
+    name = "qwen3-1.7b-4bit"
+    hf_id = "mlx-community/Qwen3-1.7B-4bit"
+
+    def __init__(self, max_tokens: int = 512) -> None:
+        self.max_tokens = max_tokens
+        self._model = None
+        self._tok = None
+        self._generate = None
+
+    def warmup(self) -> None:
+        from huggingface_hub import snapshot_download
+        from mlx_lm import load, generate
+        path = snapshot_download(self.hf_id)
+        self._model, self._tok = load(path)
+        self._generate = generate
+        self._run("Hi.")
+
+    def _run(self, text: str) -> str:
+        prompt = self._tok.apply_chat_template(
+            [
+                {"role": "system", "content": QWEN_TASK},
+                {"role": "user", "content": text + "\n/no_think"},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        return self._generate(self._model, self._tok,
+                              prompt=prompt, max_tokens=self.max_tokens, verbose=False)
+
+    def detect(self, text: str) -> list[Span]:
+        raw = self._run(text)
+        items = _parse_qwen_json(raw)
+        spans: list[Span] = []
+        used: list[tuple[int, int]] = []
+        for it in items:
+            original = it.get("text", "")
+            if not original:
+                continue
+            search_from = 0
+            idx = -1
+            while True:
+                idx = text.find(original, search_from)
+                if idx < 0:
+                    break
+                end = idx + len(original)
+                if not any(s < end and e > idx for s, e in used):
+                    break
+                search_from = idx + 1
+            if idx < 0:
+                continue
+            type_ = (it.get("type") or "").strip().upper()
+            label = type_ if type_ in LABEL_TIER else _infer_label(original)
+            tier = LABEL_TIER.get(label, "A")
+            spans.append(Span(start=idx, end=end, label=label, tier=tier))
+            used.append((idx, end))
+        spans.sort(key=lambda s: s.start)
+        return spans
+
+
+# Register on import for run.py.
+def register(adapters: dict) -> None:
+    adapters["nemotron"] = NemotronAdapter
+    adapters["anonymizer"] = AnonymizerSLMAdapter
+    adapters["qwen3"] = Qwen3Adapter

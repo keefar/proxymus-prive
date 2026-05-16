@@ -20,6 +20,13 @@ from pathlib import Path
 from .adapters import ADAPTERS, Span
 from .metrics import aggregate, serialise
 
+# MLX adapters are optional — only register if the deps are installed.
+try:
+    from . import adapters_mlx as _mlx
+    _mlx.register(ADAPTERS)
+except ImportError:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_DIR = ROOT / "fixtures"
 RESULTS_DIR = ROOT / "benchmarks" / "results"
@@ -150,7 +157,11 @@ def main() -> int:
         out_path = Path(args.output) if args.output else (RESULTS_DIR / f"{args.adapter}.json")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        print(f"\nwrote {out_path.relative_to(ROOT)}", file=sys.stderr)
+        try:
+            display = out_path.resolve().relative_to(ROOT)
+        except ValueError:
+            display = out_path.resolve()
+        print(f"\nwrote {display}", file=sys.stderr)
 
     return 0
 
