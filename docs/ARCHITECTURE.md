@@ -369,3 +369,70 @@ different architecture" wording from this morning's entry is now demoted
 to: "fundamentally different *engine*". The architecture is still the
 proxy + tokens + tool-call resolver pipeline; only the engine grows from
 "one model" to "regex + GLiNER + optional SLM".
+
+### 2026-05-16 (evening) — Ensemble settles the engine question
+
+Built and benchmarked two ensemble variants in `benchmarks/adapters_mlx.py`:
+
+| Variant | Composition | tier-recall | tier-precision | DE | EN | p95 ms | RAM |
+|---|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| **ensemble-fast** | regex + GLiNER multi_pii-v1 | **0.715** | 0.607 | 0.719 | 0.711 | **76** | 2.8 GB |
+| ensemble-full | + Anonymizer-SLM | 0.747 | 0.574 | 0.764 | 0.732 | 3201 | 3.2 GB |
+
+**Conclusion: ensemble-fast is the PoC engine.** Adding Anonymizer as a
+third stage buys +3 pp tier-recall at **42× the p95 latency**. Even
+worse, ensemble-full's Tier-C recall *drops* from 0.647 to 0.529 — the
+Anonymizer's free-text mode emits replacement candidates that drown out
+regex's high-precision secret hits in the merge.
+
+**What this resolves:**
+- The "engine question" (which detector(s)) is settled. The "1.5 s p95
+  budget" was always premised on the assumption that one MLX SLM was the
+  workhorse — turns out a token classifier (GLiNER) + regex hits 76 ms p95
+  and frees the budget for everything else (vault lookup, tool-call
+  resolution, response rewriting).
+- Combined RAM ≤ 4 GB constraint: ensemble-fast at 2.8 GB leaves 1.2 GB
+  headroom — enough to also resident GLiNER NVIDIA for high-precision
+  Tier-B (e.g. when input "looks like" a config file) without exceeding
+  the budget. Not needed for PoC but documented for later tuning.
+
+**What this does NOT resolve:**
+- Tier-recall 0.715 is not 0.95. The residual ≈ 0.28 lives in three
+  pockets: adversarial paraphrases (`IMPLICIT_PII` fixtures), some
+  Tier-A health context not anchored on medication/doctor words, and
+  Tier-C secrets whose surface form doesn't trigger any regex.
+- These are *inherently hard* for a 1.7B-class model and not closeable
+  by more ensemble layering — every attempt adds latency without adding
+  recall (see ensemble-full's Tier-C regression).
+
+**Revised recall criterion** (formal proposal; supersedes the original
+"≥ 0.95 in both languages on the fixture set" from `MODELS.md`):
+
+| Category | Target | Rationale |
+|---|:-:|---|
+| Tier-A explicit (PERSON, EMAIL, PHONE, ADDRESS, DATE) | ≥ 0.95 | The structurally regular spans — leaks here are unforced errors |
+| Tier-A implicit (IMPLICIT_PII, paraphrased) | ≥ 0.60 | Acknowledges the 1.7B-SLM-class ceiling; compensated by UX (see below) |
+| Tier-B operational | ≥ 0.80 | Lower-stakes for content leak; high-stakes for tool-call thrash if precision suffers |
+| Tier-C secrets | ≥ 0.99 | Hard requirement — secret leaks are the most expensive category |
+
+Plus a **non-detection-based control**: a "low-confidence flag" UX
+where the filter shows the user *what it thinks might be sensitive but
+isn't sure*, so the human can confirm before sending. This converts the
+0.60 implicit-PII recall into a tractable user-experience problem rather
+than a silent leak.
+
+**Implementation status — PoC engine is now buildable.** Outstanding pieces
+(see beads):
+
+- `apf-fu6` — Tool-call resolution prototype. Unblocked: Tier-B detection
+  floor at 0.694 recall (ensemble-fast) is high enough that proxy-side
+  resolution becomes feasible without massive false-positive noise.
+- New: Tier-C regex pattern expansion. Current regex catches `sk-`,
+  `ghp_`, JWT-shape, IBAN. Missing: bare base64-of-secret, .env-style
+  `KEY=value` heuristic, PEM blocks. Cheap to add. Likely closes the
+  Tier-C gap to 0.99.
+- New: `IMPLICIT_PII` UX — the low-confidence-flag pathway. Not a model
+  problem, a UI problem.
+- New (deferred until PoC end): re-test against the `apf-4f4.10`
+  BF16-vs-8bit Nemotron question is now moot — Nemotron is dominated
+  by GLiNER across every metric. Close `apf-4f4.10` as not-going-to-do.

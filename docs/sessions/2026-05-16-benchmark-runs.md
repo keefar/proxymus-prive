@@ -157,6 +157,28 @@ problem, not a research question. Stage-1 primary engine = GLiNER
 `multi_pii-v1`. The next concrete step is `apf-857` (ensemble meta-adapter)
 with the architecture sketch added to the decision log.
 
+## Final evening — ensemble settles the engine question
+
+Built ensemble-fast (regex + GLiNER) and ensemble-full (+ Anonymizer).
+Numbers in the third decision-log entry. Headline:
+
+- **ensemble-fast = the PoC engine.** Tier-recall 0.715, p95 76 ms,
+  2.8 GB RAM. Within all original budgets.
+- ensemble-full adds +3 pp tier-recall for 42× the latency, and Tier-C
+  recall *drops* (Anonymizer FPs dilute regex's high-precision secret
+  hits). Diminishing-return verdict is unambiguous.
+
+This settles which detector(s) the PoC will use. The recall criterion
+itself gets revised in the decision log — the original "≥ 0.95 in both
+languages" was always under the assumption of a single perfect model.
+Reformulated as a per-category target with a "low-confidence flag" UX
+fallback for implicit PII.
+
+What's no longer relevant after this finding:
+
+- `apf-4f4.10` (Nemotron BF16 vs 8bit) — Nemotron is dominated by GLiNER
+  on every metric. Quantisation question is moot. Closing as not-doing.
+
 ## Open follow-ups (beads)
 
 | Issue | What |

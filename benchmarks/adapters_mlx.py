@@ -485,6 +485,113 @@ class GlinerNvidiaAdapter(_GlinerBase):
     hf_id = "nvidia/gliner-PII"
 
 
+# ---- Ensemble meta-adapters ----------------------------------------------
+
+# Runs multiple detectors and merges their spans:
+#   - Union by character range; overlapping spans are deduped, keeping the
+#     LONGEST span at each start (GLiNER tends to find broader, more
+#     contextually-aware spans than regex, which is usually what we want).
+#   - Label-conflict resolution: spans from earlier-listed detectors win on
+#     label when their range is a strict subset of a later-listed detector's
+#     range — this lets us seed precise structural labels (regex EMAIL) and
+#     have GLiNER's broader-context predictions fill the gaps.
+#
+# The cost knob is which detectors are included. We register two variants:
+#   - ensemble-fast: RegexBaseline + GLiNER multi_pii-v1
+#       Cheap (p95 < 100ms target), no SLM, no DE-fragile components.
+#   - ensemble-full: above + AnonymizerSLM
+#       Adds the slow generative pass for the long tail (implicit PII,
+#       free-form prose). Latency dominated by Anonymizer (~1.5s/call mean).
+
+from typing import Sequence
+
+
+def _merge_spans(span_groups: Sequence[list[Span]]) -> list[Span]:
+    """Union, dedupe, longest-wins. Earlier groups win on label when nested."""
+    flat: list[tuple[int, Span]] = []  # (group_idx, span)
+    for gi, group in enumerate(span_groups):
+        for s in group:
+            flat.append((gi, s))
+    # Sort: by start, then by length descending so the longest span comes first
+    # at each start position.
+    flat.sort(key=lambda t: (t[1].start, -(t[1].end - t[1].start)))
+    kept: list[tuple[int, Span]] = []
+    for gi, s in flat:
+        # Skip if a previously-kept span fully covers this one.
+        contained = False
+        for kgi, ks in kept:
+            if ks.start <= s.start and s.end <= ks.end:
+                contained = True
+                break
+        if contained:
+            continue
+        # If this span fully covers a previously-kept smaller span, replace
+        # the smaller one ONLY if the smaller is from a later (less trusted)
+        # group; otherwise keep both since they don't strictly nest.
+        new_kept: list[tuple[int, Span]] = []
+        replaced = False
+        for kgi, ks in kept:
+            if s.start <= ks.start and ks.end <= s.end and ks != s:
+                # Outer span — prefer the *more specific* (smaller, earlier-group)
+                # span's label by retaining ks if it came from an earlier group.
+                if kgi <= gi:
+                    # Smaller earlier-group span keeps its position; absorb the
+                    # outer span only if it adds tier info the inner one didn't
+                    # have (rare). For simplicity: keep the smaller span.
+                    new_kept.append((kgi, ks))
+                    replaced = True
+                else:
+                    # Smaller span came from a less-trusted group — replace.
+                    pass
+            else:
+                new_kept.append((kgi, ks))
+        if not replaced:
+            new_kept.append((gi, s))
+        kept = new_kept
+    kept.sort(key=lambda t: t[1].start)
+    return [s for _, s in kept]
+
+
+class EnsembleFastAdapter:
+    name = "ensemble-fast"
+
+    def __init__(self) -> None:
+        self._detectors: list = []
+
+    def warmup(self) -> None:
+        from .adapters import RegexBaseline
+        regex = RegexBaseline()
+        gliner = GlinerMultiPiiAdapter()
+        regex.warmup()
+        gliner.warmup()
+        self._detectors = [regex, gliner]
+
+    def detect(self, text: str) -> list[Span]:
+        groups = [d.detect(text) for d in self._detectors]
+        return _merge_spans(groups)
+
+
+class EnsembleFullAdapter:
+    name = "ensemble-full"
+
+    def __init__(self) -> None:
+        self._detectors: list = []
+
+    def warmup(self) -> None:
+        from .adapters import RegexBaseline
+        regex = RegexBaseline()
+        gliner = GlinerMultiPiiAdapter()
+        anon = AnonymizerSLMAdapter()
+        regex.warmup()
+        gliner.warmup()
+        anon.warmup()
+        self._detectors = [regex, gliner, anon]
+
+    def detect(self, text: str) -> list[Span]:
+        groups = [d.detect(text) for d in self._detectors]
+        return _merge_spans(groups)
+
+
 # Register on import for run.py.
 def register(adapters: dict) -> None:
     adapters["nemotron"] = NemotronAdapter
@@ -492,3 +599,5 @@ def register(adapters: dict) -> None:
     adapters["qwen3"] = Qwen3Adapter
     adapters["gliner"] = GlinerMultiPiiAdapter
     adapters["gliner-nvidia"] = GlinerNvidiaAdapter
+    adapters["ensemble-fast"] = EnsembleFastAdapter
+    adapters["ensemble-full"] = EnsembleFullAdapter
