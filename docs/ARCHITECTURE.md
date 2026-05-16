@@ -286,3 +286,86 @@ benchmark:
   tiers per model.
 - ❌ "Pick the best stage-2 model" is not the right question; the empirical
   shape rejects it.
+
+### 2026-05-16 (later) — GLiNER multilingual reshapes the picture
+
+Two GLiNER variants added to the benchmark after the initial decision. Both
+roughly **2× the recall of the best generative model**, with latency in
+Nemotron's ballpark — i.e. the same kind of tooling fit (token classifier,
+batched-friendly, no prompt engineering) but with multilingual training and
+implicit-PII coverage that Nemotron lacks.
+
+| Model                              | tier-recall | tier-precision | DE-rec | EN-rec | p95 ms | RAM    |
+|------------------------------------|:-----------:|:--------------:|:------:|:------:|:------:|:------:|
+| **GLiNER `urchade/gliner_multi_pii-v1`** | **0.667** | 0.588 | **0.708** | 0.629 |  80  | 2.8 GB |
+| **GLiNER `nvidia/gliner-PII`**          | **0.688** | 0.646 | 0.674 | 0.701 | 202  | 3.9 GB |
+| Anonymizer-SLM 1.7B (gen)              | 0.355 | 0.516 | 0.382 | 0.330 | 2958 | 1.3 GB |
+| Nemotron MLX 8bit (token-class)        | 0.290 | 0.551 | 0.258 | 0.320 |  187 | 1.6 GB |
+| Qwen3-1.7B 4bit (gen, zero-shot)       | 0.226 | 0.712 | 0.213 | 0.237 | 1009 | 1.3 GB |
+| regex baseline (floor)                 | 0.194 | 0.900 | 0.112 | 0.268 |  <1  |   —    |
+
+**What GLiNER changes about the picture:**
+
+- The headline "no model hits 0.95 — must build an ensemble" still stands.
+  GLiNER tops at 0.69 tier-recall, not 0.95.
+- But the **gap closes by ~0.33** vs. the previous best (Anonymizer-SLM at
+  0.355). The remaining ~0.30 to the criterion now looks closeable by a
+  thin ensemble layer, not a fundamentally different architecture.
+- GLiNER **catches implicit PII** that all three earlier models missed —
+  "Der Kollege aus dem Controlling" → person 0.70; "die einzige Mitarbeiterin
+  im Team mit zwei Kindern und einer Diabetes-Diagnose" → person + health.
+  This was the structural gap the earlier finding flagged.
+- **German support is real and untrained for** — `multi_pii-v1` actually
+  scores higher on DE than EN (0.708 vs. 0.629). The NVIDIA variant flips
+  this (better EN), so the multilingual fine-tune *does* matter. Use
+  `multi_pii-v1` for DE-heavy workloads.
+- **Tier-B precision** is the NVIDIA variant's strength (0.960 vs. multi's
+  0.731). Matters because Tier-B false positives mean the tool-call
+  resolver wastes work on non-paths. NVIDIA is the better fit for
+  config/log inputs; multi-v1 for free-form prose.
+
+**Revised decision (still subject to ensemble verification):**
+
+- **Stage 1 primary engine: GLiNER `multi_pii-v1`.** Fast (p95 80ms),
+  multilingual, catches the hard categories. 2.8 GB RSS sits inside the
+  combined 4 GB budget if Stage 2 stays under ~1 GB.
+- **Stage 2 (residual): TBD.** Two candidates to evaluate against
+  the residual fixtures (where Stage 1 misses):
+  - Anonymizer-SLM, called selectively on free-form text and narrative
+    notes where GLiNER's miss rate is concentrated. Latency cost
+    amortised by selective invocation.
+  - Regex secret patterns + GLiNER NVIDIA variant on operational/secret
+    inputs. Higher Tier-B precision avoids tool-call-resolver thrash.
+- **Stage 3 (escape valve)**: a "low-confidence summary" hand-off where
+  the user is shown what *might* be sensitive but the system isn't sure.
+  Avoids the false dichotomy between "block silently" and "leak".
+
+The single-engine framing is still rejected, but the residual gap (~0.30)
+is small enough that the ensemble architecture is now a tractable
+engineering problem, not an open research question. Next concrete step is
+the ensemble meta-adapter (`apf-857`) — combine regex + GLiNER + Anonymizer
+with explicit routing, then re-measure.
+
+**Updated PoC architecture sketch:**
+
+```
+input text
+   │
+   ├──▶ regex pre-pass (Tier-B/C structurally regular)       ←  apf-857
+   │       │
+   ├──▶ GLiNER multi_pii-v1  (all tiers, multilingual)
+   │       │
+   ├──▶ Anonymizer-SLM       (only if input looks like prose / notes)
+   │       │
+   ▼       ▼
+  union, dedupe (longest span at each start wins)
+   │
+   ▼
+ tier-tagged spans
+```
+
+This is the working hypothesis going into `apf-857`. The "fundamentally
+different architecture" wording from this morning's entry is now demoted
+to: "fundamentally different *engine*". The architecture is still the
+proxy + tokens + tool-call resolver pipeline; only the engine grows from
+"one model" to "regex + GLiNER + optional SLM".

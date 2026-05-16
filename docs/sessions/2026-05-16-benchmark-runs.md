@@ -120,6 +120,43 @@ and German prose).
 - `.gitignore` cleaned up: synthetic fixtures (`fixtures/*.jsonl`) committed;
   beads internal `*.jsonl` exports ignored.
 
+## Late-evening addendum — GLiNER multilingual
+
+After the headline finding, ran `apf-4f4.9` (GLiNER as Stage-1 candidate).
+Two variants tested: `urchade/gliner_multi_pii-v1` (the documented
+multilingual PII model) and `nvidia/gliner-PII` (a 570M GLiNER fine-tune
+released October 2025 — found while searching for the May 2026 GLiNER2-PII
+paper, whose HF model ID I couldn't locate within the time-box).
+
+Both **roughly doubled the tier-recall** of the best previous candidate
+without inflating latency much. Numbers in the new ARCHITECTURE.md
+decision-log addendum ("2026-05-16 (later) — GLiNER multilingual
+reshapes the picture"). Headline:
+
+| Model | tier-recall | DE-rec | EN-rec | p95 ms | RAM |
+|---|:-:|:-:|:-:|:-:|:-:|
+| GLiNER `urchade/gliner_multi_pii-v1` | **0.667** | **0.708** | 0.629 | 80 | 2.8 GB |
+| GLiNER `nvidia/gliner-PII` | **0.688** | 0.674 | 0.701 | 202 | 3.9 GB |
+| previous best (Anonymizer-SLM) | 0.355 | 0.382 | 0.330 | 2958 | 1.3 GB |
+
+Critical wins:
+
+- GLiNER catches the **implicit PII** category all earlier models missed
+  — "der Kollege aus dem Controlling" tagged as person at 0.70.
+- DE works (`multi_pii-v1` actually scores higher on DE than EN — 0.708
+  vs. 0.629).
+- Latency well under budget — GLiNER is essentially as fast as Nemotron.
+- Tier-B precision on `nvidia/gliner-PII` (0.960) is the cleanest of any
+  candidate — relevant for the tool-call-resolver path where Tier-B FPs
+  are costly.
+
+Decision update: the morning's "no single model hits 0.95 → must build
+ensemble" finding still holds (GLiNER tops at 0.69), but the residual
+gap is small enough that the ensemble is now a tractable engineering
+problem, not a research question. Stage-1 primary engine = GLiNER
+`multi_pii-v1`. The next concrete step is `apf-857` (ensemble meta-adapter)
+with the architecture sketch added to the decision log.
+
 ## Open follow-ups (beads)
 
 | Issue | What |

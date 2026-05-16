@@ -357,8 +357,138 @@ class Qwen3Adapter:
         return spans
 
 
+# ---- GLiNER multilingual PII (urchade/gliner_multi_pii-v1) ---------------
+
+# GLiNER is a BERT-encoder NER with zero-shot label support: you pass a list
+# of natural-language labels at call time and it returns spans for each. The
+# multi_pii-v1 variant is fine-tuned on a synthetic PII NER dataset and
+# explicitly supports DE/EN/FR/ES/IT/PT.
+#
+# Strategy: hand GLiNER descriptive natural-language labels (its strength)
+# and map back to our inventory.
+
+GLINER_LABELS = [
+    "person",
+    "email",
+    "phone number",
+    "street address",
+    "city",
+    "country",
+    "organization",
+    "date",
+    "appointment",
+    "medical condition",
+    "medication",
+    "doctor",
+    "family relationship",
+    "iban",
+    "credit card",
+    "bank account",
+    "implicit person identifier",
+    "implicit health identifier",
+    "file path",
+    "filename",
+    "hostname",
+    "ip address",
+    "url",
+    "api key",
+    "private key",
+    "password",
+    "token",
+    "database connection string",
+]
+
+GLINER_LABEL_MAP: dict[str, str] = {
+    "person": "PERSON",
+    "email": "EMAIL",
+    "phone number": "PHONE",
+    "street address": "ADDRESS",
+    "city": "LOCATION",
+    "country": "LOCATION",
+    "organization": "ORG",
+    "date": "DATE",
+    "appointment": "APPOINTMENT",
+    "medical condition": "HEALTH",
+    "medication": "HEALTH",
+    "doctor": "HEALTH",
+    "family relationship": "RELATIONSHIP",
+    "iban": "FINANCIAL",
+    "credit card": "FINANCIAL",
+    "bank account": "FINANCIAL",
+    "implicit person identifier": "IMPLICIT_PII",
+    "implicit health identifier": "HEALTH",
+    "file path": "PATH",
+    "filename": "FILENAME",
+    "hostname": "HOSTNAME",
+    "ip address": "IP",
+    "url": "URL_LOCAL",
+    "api key": "API_KEY",
+    "private key": "PRIVATE_KEY",
+    "password": "PASSWORD",
+    "token": "TOKEN",
+    "database connection string": "CONNECTION_STRING",
+}
+
+
+class _GlinerBase:
+    hf_id: str = ""
+    name: str = ""
+
+    def __init__(self, threshold: float = 0.5) -> None:
+        self.threshold = threshold
+        self._model = None
+
+    def warmup(self) -> None:
+        from gliner import GLiNER
+        self._model = GLiNER.from_pretrained(self.hf_id)
+        # Prime kernels.
+        self._model.predict_entities("Hi.", ["person"], threshold=self.threshold)
+
+    def detect(self, text: str) -> list[Span]:
+        assert self._model is not None, "call warmup() before detect()"
+        raw = self._model.predict_entities(text, GLINER_LABELS,
+                                           threshold=self.threshold)
+        spans: list[Span] = []
+        for ent in raw:
+            label_in = ent.get("label", "")
+            label = GLINER_LABEL_MAP.get(label_in)
+            if label is None:
+                continue
+            tier = LABEL_TIER.get(label)
+            if tier is None:
+                continue
+            start = int(ent["start"])
+            end = int(ent["end"])
+            if end <= start:
+                continue
+            spans.append(Span(start=start, end=end, label=label, tier=tier))
+        spans.sort(key=lambda s: (s.start, -s.end))
+        # GLiNER can emit overlapping spans for different labels — dedupe by
+        # keeping the longest span at each start position.
+        deduped: list[Span] = []
+        seen_ranges: list[tuple[int, int]] = []
+        for s in spans:
+            if any(rs <= s.start and s.end <= re for rs, re in seen_ranges):
+                continue
+            deduped.append(s)
+            seen_ranges.append((s.start, s.end))
+        return deduped
+
+
+class GlinerMultiPiiAdapter(_GlinerBase):
+    name = "gliner-multi-pii-v1"
+    hf_id = "urchade/gliner_multi_pii-v1"
+
+
+class GlinerNvidiaAdapter(_GlinerBase):
+    name = "gliner-pii-nvidia"
+    hf_id = "nvidia/gliner-PII"
+
+
 # Register on import for run.py.
 def register(adapters: dict) -> None:
     adapters["nemotron"] = NemotronAdapter
     adapters["anonymizer"] = AnonymizerSLMAdapter
     adapters["qwen3"] = Qwen3Adapter
+    adapters["gliner"] = GlinerMultiPiiAdapter
+    adapters["gliner-nvidia"] = GlinerNvidiaAdapter
