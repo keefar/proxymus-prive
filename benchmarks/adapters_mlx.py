@@ -430,6 +430,55 @@ GLINER_LABEL_MAP: dict[str, str] = {
 }
 
 
+# Salutation prefixes that GLiNER sometimes glues onto a PERSON span. Stripped
+# from the start of PERSON spans during post-processing.
+_PERSON_SALUTATION_PREFIXES = (
+    # German
+    "Lieber ", "Liebe ", "Liebes ", "Sehr geehrter Herr ", "Sehr geehrte Frau ",
+    "Hallo ", "Hi ", "Hey ", "Servus ", "Moin ", "Guten Tag ", "Hallo zusammen,",
+    "Hallo zusammen", "Guten Morgen ", "Guten Abend ",
+    # English
+    "Dear ", "Hi ", "Hey ", "Hello ", "Greetings ", "Mr. ", "Mrs. ", "Ms. ", "Dr. ",
+    # Common French/IT that creep in via the multilingual base
+    "Cher ", "Chère ", "Caro ", "Cara ",
+)
+
+# Punctuation that sometimes leaks into the start/end of a span and should be
+# trimmed before tokenisation.
+_TRIM_LEADING_CHARS = "([{<\"'`,.;: \t\n"
+_TRIM_TRAILING_CHARS = ")]}>\"'`,.;: \t\n"
+
+
+def _clean_span(text: str, span: Span) -> Span | None:
+    """Strip salutation prefixes and stray punctuation from a span.
+    Returns None if the cleaned span becomes empty."""
+    start, end = span.start, span.end
+    fragment = text[start:end]
+
+    # Trim trailing/leading punctuation (but keep matched pairs intact).
+    while fragment and fragment[0] in _TRIM_LEADING_CHARS:
+        fragment = fragment[1:]
+        start += 1
+    while fragment and fragment[-1] in _TRIM_TRAILING_CHARS:
+        fragment = fragment[:-1]
+        end -= 1
+
+    # PERSON-specific: strip salutation prefixes (case-insensitive).
+    if span.label == "PERSON":
+        lower = fragment.lower()
+        for prefix in _PERSON_SALUTATION_PREFIXES:
+            if lower.startswith(prefix.lower()):
+                offset = len(prefix)
+                fragment = fragment[offset:]
+                start += offset
+                lower = fragment.lower()
+                break  # one salutation strip per pass
+
+    if not fragment.strip():
+        return None
+    return Span(start=start, end=end, label=span.label, tier=span.tier)
+
+
 class _GlinerBase:
     hf_id: str = ""
     name: str = ""
@@ -461,7 +510,10 @@ class _GlinerBase:
             end = int(ent["end"])
             if end <= start:
                 continue
-            spans.append(Span(start=start, end=end, label=label, tier=tier))
+            raw_span = Span(start=start, end=end, label=label, tier=tier)
+            cleaned = _clean_span(text, raw_span)
+            if cleaned is not None:
+                spans.append(cleaned)
         spans.sort(key=lambda s: (s.start, -s.end))
         # GLiNER can emit overlapping spans for different labels — dedupe by
         # keeping the longest span at each start position.
@@ -799,7 +851,10 @@ class PresidioAdapter:
             tier = LABEL_TIER.get(label)
             if tier is None:
                 continue
-            spans.append(Span(start=r.start, end=r.end, label=label, tier=tier))
+            raw = Span(start=r.start, end=r.end, label=label, tier=tier)
+            cleaned = _clean_span(text, raw)
+            if cleaned is not None:
+                spans.append(cleaned)
         return spans
 
 
