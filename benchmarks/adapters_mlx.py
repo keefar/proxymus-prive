@@ -485,6 +485,110 @@ class GlinerNvidiaAdapter(_GlinerBase):
     hf_id = "nvidia/gliner-PII"
 
 
+class GlinerKnowledgatorAdapter(_GlinerBase):
+    name = "gliner-pii-knowledgator-large"
+    hf_id = "knowledgator/gliner-pii-large-v1.0"
+
+
+# ---- Generic HuggingFace token-classification adapter --------------------
+
+# Uses transformers' `pipeline("token-classification", ...)`. The pipeline
+# returns dicts with entity_group/word/score/start/end. Subclasses provide
+# the HF id and a native-to-ours label map.
+
+class _HFTokenClassifierBase:
+    hf_id: str = ""
+    name: str = ""
+    label_map: dict[str, str] = {}
+    # Some models emit BIO/BIOES prefixes — strip "B-", "I-", "E-", "S-".
+
+    def __init__(self, min_score: float = 0.5) -> None:
+        self.min_score = min_score
+        self._pipe = None
+
+    def warmup(self) -> None:
+        from transformers import pipeline
+        self._pipe = pipeline(
+            "token-classification",
+            model=self.hf_id,
+            aggregation_strategy="simple",
+            device=-1,  # CPU; MPS via torch is set per-tensor when supported
+        )
+        self._pipe("Hi.")
+
+    def _normalize_label(self, raw: str) -> str:
+        for prefix in ("B-", "I-", "E-", "S-", "L-", "U-"):
+            if raw.startswith(prefix):
+                raw = raw[len(prefix):]
+                break
+        return raw.upper()
+
+    def detect(self, text: str) -> list[Span]:
+        assert self._pipe is not None
+        raw = self._pipe(text)
+        spans: list[Span] = []
+        for ent in raw:
+            score = float(ent.get("score", 0.0))
+            if score < self.min_score:
+                continue
+            native = self._normalize_label(ent.get("entity_group", ent.get("entity", "")))
+            label = self.label_map.get(native)
+            if label is None:
+                continue
+            tier = LABEL_TIER.get(label)
+            if tier is None:
+                continue
+            start = int(ent["start"])
+            end = int(ent["end"])
+            if end <= start:
+                continue
+            spans.append(Span(start=start, end=end, label=label, tier=tier))
+        return spans
+
+
+# Piiranha labels (from model card, 17 labels):
+PIIRANHA_MAP = {
+    "GIVENNAME": "PERSON", "SURNAME": "PERSON", "USERNAME": "PERSON",
+    "EMAIL": "EMAIL", "TELEPHONENUM": "PHONE",
+    "STREET": "ADDRESS", "CITY": "LOCATION", "ZIPCODE": "ADDRESS",
+    "BUILDINGNUM": "ADDRESS", "DATEOFBIRTH": "DATE",
+    "ACCOUNTNUM": "FINANCIAL", "CREDITCARDNUMBER": "FINANCIAL",
+    "IDCARDNUM": "NOTE_SENSITIVE", "TAXNUM": "NOTE_SENSITIVE",
+    "SOCIALNUM": "NOTE_SENSITIVE", "DRIVERLICENSENUM": "NOTE_SENSITIVE",
+    "PASSWORD": "PASSWORD",
+}
+
+
+class PiiranhaAdapter(_HFTokenClassifierBase):
+    name = "piiranha-v1"
+    hf_id = "iiiorg/piiranha-v1-detect-personal-information"
+    label_map = PIIRANHA_MAP
+
+
+# ai4privacy ModernBERT openpii labels (≈20 categories per model card)
+AI4P_MODERN_MAP = {
+    "GIVENNAME": "PERSON", "SURNAME": "PERSON", "FULLNAME": "PERSON",
+    "USERNAME": "PERSON", "PERSON": "PERSON",
+    "EMAIL": "EMAIL", "TELEPHONENUM": "PHONE", "PHONENUMBER": "PHONE",
+    "PHONE": "PHONE",
+    "STREET": "ADDRESS", "BUILDINGNUM": "ADDRESS", "ZIPCODE": "ADDRESS",
+    "CITY": "LOCATION", "STATE": "LOCATION", "COUNTRY": "LOCATION",
+    "DATEOFBIRTH": "DATE", "DOB": "DATE", "DATE": "DATE", "TIME": "DATE",
+    "ACCOUNTNUM": "FINANCIAL", "ACCOUNTNUMBER": "FINANCIAL",
+    "CREDITCARDNUMBER": "FINANCIAL", "IBAN": "FINANCIAL",
+    "IDCARDNUM": "NOTE_SENSITIVE", "TAXNUM": "NOTE_SENSITIVE",
+    "SOCIALNUM": "NOTE_SENSITIVE", "GENDER": "NOTE_SENSITIVE",
+    "SEX": "NOTE_SENSITIVE", "AGE": "NOTE_SENSITIVE",
+    "URL": "URL_LOCAL",
+}
+
+
+class Ai4PrivacyModernBertAdapter(_HFTokenClassifierBase):
+    name = "ai4privacy-modernbert-openpii"
+    hf_id = "ai4privacy/llama-ai4privacy-multilingual-categorical-anonymiser-openpii"
+    label_map = AI4P_MODERN_MAP
+
+
 # ---- Ensemble meta-adapters ----------------------------------------------
 
 # Runs multiple detectors and merges their spans:
@@ -571,6 +675,43 @@ class EnsembleFastAdapter:
         return _merge_spans(groups)
 
 
+class EnsembleMaxAdapter:
+    """Wide net: regex (Tier B/C) + Presidio (fast NER + recognizers) +
+    GLiNER multi-pii-v1 (multilingual + implicit) +
+    GLiNER nvidia (high Tier-B/C precision).
+    Each component contributes a different blind-spot patch. Slower than
+    ensemble-fast but should hit higher recall."""
+    name = "ensemble-max"
+
+    def __init__(self) -> None:
+        self._detectors: list = []
+
+    def warmup(self) -> None:
+        from .adapters import RegexBaseline
+        regex = RegexBaseline()
+        presidio = PresidioAdapter()
+        gliner_multi = GlinerMultiPiiAdapter()
+        gliner_nvidia = GlinerNvidiaAdapter()
+        regex.warmup()
+        presidio.warmup()
+        gliner_multi.warmup()
+        gliner_nvidia.warmup()
+        self._detectors = [regex, presidio, gliner_multi, gliner_nvidia]
+
+    def detect(self, text: str) -> list[Span]:
+        groups = [d.detect(text) for d in self._detectors]
+        return _merge_spans(groups)
+
+
+class GlinerMultiPiiLowThresholdAdapter(_GlinerBase):
+    """Same model, threshold 0.3 instead of 0.5 — buys recall, pays precision."""
+    name = "gliner-multi-pii-v1-lo"
+    hf_id = "urchade/gliner_multi_pii-v1"
+
+    def __init__(self, threshold: float = 0.3) -> None:
+        super().__init__(threshold=threshold)
+
+
 class EnsembleFullAdapter:
     name = "ensemble-full"
 
@@ -593,11 +734,86 @@ class EnsembleFullAdapter:
 
 
 # Register on import for run.py.
+# ---- Microsoft Presidio (analyzer with regex + spaCy NER) ----------------
+
+PRESIDIO_MAP = {
+    "PERSON": "PERSON",
+    "EMAIL_ADDRESS": "EMAIL",
+    "PHONE_NUMBER": "PHONE",
+    "IBAN_CODE": "FINANCIAL",
+    "CREDIT_CARD": "FINANCIAL",
+    "US_BANK_NUMBER": "FINANCIAL",
+    "IP_ADDRESS": "IP",
+    "URL": "URL_LOCAL",
+    "DATE_TIME": "DATE",
+    "LOCATION": "LOCATION",
+    "NRP": "NOTE_SENSITIVE",
+    "US_SSN": "NOTE_SENSITIVE",
+    "US_DRIVER_LICENSE": "NOTE_SENSITIVE",
+    "US_PASSPORT": "NOTE_SENSITIVE",
+    "CRYPTO": "FINANCIAL",
+    "MEDICAL_LICENSE": "HEALTH",
+    "IT_PASSPORT": "NOTE_SENSITIVE",
+    "AU_TFN": "NOTE_SENSITIVE",
+    "UK_NHS": "HEALTH",
+    "SG_NRIC_FIN": "NOTE_SENSITIVE",
+}
+
+
+class PresidioAdapter:
+    name = "presidio"
+
+    def __init__(self, min_score: float = 0.4) -> None:
+        self.min_score = min_score
+        self._analyzers: dict[str, object] = {}
+
+    def warmup(self) -> None:
+        from presidio_analyzer import AnalyzerEngine
+        from presidio_analyzer.nlp_engine import NlpEngineProvider
+        # English (default), then German alongside.
+        for lang, spacy_model in [("en", "en_core_web_sm"), ("de", "de_core_news_sm")]:
+            config = {
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": lang, "model_name": spacy_model}],
+            }
+            engine = NlpEngineProvider(nlp_configuration=config).create_engine()
+            self._analyzers[lang] = AnalyzerEngine(nlp_engine=engine,
+                                                  supported_languages=[lang])
+        # Prime
+        self._analyzers["en"].analyze("Hi.", language="en")
+
+    def detect(self, text: str) -> list[Span]:
+        # Cheap language guess: presence of ä/ö/ü/ß or common DE stop words → de
+        lower = text.lower()
+        is_de = any(c in lower for c in "äöüß") or any(
+            w in lower for w in (" der ", " die ", " das ", " und ", " ich ", " ist "))
+        analyzer = self._analyzers["de" if is_de else "en"]
+        results = analyzer.analyze(text=text, language="de" if is_de else "en")
+        spans: list[Span] = []
+        for r in results:
+            if r.score < self.min_score:
+                continue
+            label = PRESIDIO_MAP.get(r.entity_type)
+            if label is None:
+                continue
+            tier = LABEL_TIER.get(label)
+            if tier is None:
+                continue
+            spans.append(Span(start=r.start, end=r.end, label=label, tier=tier))
+        return spans
+
+
 def register(adapters: dict) -> None:
     adapters["nemotron"] = NemotronAdapter
     adapters["anonymizer"] = AnonymizerSLMAdapter
     adapters["qwen3"] = Qwen3Adapter
     adapters["gliner"] = GlinerMultiPiiAdapter
     adapters["gliner-nvidia"] = GlinerNvidiaAdapter
+    adapters["gliner-knowledgator"] = GlinerKnowledgatorAdapter
+    adapters["piiranha"] = PiiranhaAdapter
+    adapters["ai4p-modernbert"] = Ai4PrivacyModernBertAdapter
+    adapters["presidio"] = PresidioAdapter
     adapters["ensemble-fast"] = EnsembleFastAdapter
     adapters["ensemble-full"] = EnsembleFullAdapter
+    adapters["ensemble-max"] = EnsembleMaxAdapter
+    adapters["gliner-lo"] = GlinerMultiPiiLowThresholdAdapter

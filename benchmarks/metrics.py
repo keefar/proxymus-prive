@@ -96,7 +96,8 @@ def aggregate(
 ) -> ScoreReport:
     report = ScoreReport()
     for fix in fixtures:
-        gold = [Span(**s) for s in fix["spans"]]
+        gold = [Span(start=s["start"], end=s["end"],
+                     label=s["label"], tier=s["tier"]) for s in fix["spans"]]
         pred = predictions[fix["id"]]
         matched, unmatched_pred = score_fixture(gold, pred, overlap_threshold)
         lang = fix["lang"]

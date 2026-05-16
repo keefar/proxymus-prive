@@ -80,10 +80,16 @@ def run(adapter_name: str, fixture_paths: list[Path]) -> dict:
     latencies_sorted = sorted(latencies)
     n = len(latencies_sorted)
 
+    def _rel(p: Path) -> str:
+        try:
+            return str(p.resolve().relative_to(ROOT))
+        except ValueError:
+            return str(p.resolve())
+
     return {
         "adapter": adapter_name,
         "fixtures": {
-            "files": [str(p.relative_to(ROOT)) for p in fixture_paths],
+            "files": [_rel(p) for p in fixture_paths],
             "count": len(fixtures),
         },
         "scores": serialise(report),
