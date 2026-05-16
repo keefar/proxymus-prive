@@ -18,8 +18,9 @@ models/
 
 # Benchmarking outputs
 benchmarks/results/
-*.jsonl
-*.csv
+# Note: fixtures/*.jsonl IS committed (synthetic, see docs/MODELS.md).
+# Beads' .beads/issues.jsonl is a passive export; DB is source of truth.
+.beads/issues.jsonl
 
 # Editor / OS
 .DS_Store
@@ -40,3 +41,4 @@ fixtures/private/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.beads/interactions.jsonl

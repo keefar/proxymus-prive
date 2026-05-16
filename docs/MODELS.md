@@ -62,16 +62,106 @@ both stages and what we'd want to benchmark before committing.
 Once the PoC scaffold is in place, run all stage-2 candidates against the same fixture set.
 Don't optimize, just measure.
 
-### Fixture set — to be assembled before the benchmark
-- ~50 representative texts the filter must handle. Suggested mix:
-  - German + English email body (5 + 5)
-  - Calendar entry text, German + English (3 + 3)
-  - Bash transcript with environment variables (5)
-  - Source-code snippet containing emails / DSNs / hardcoded keys (5)
-  - Prose mentioning real-feeling personal details — health, location, relationships (10)
-  - Adversarial: implicit PII that regex would miss (e.g. "der Kollege aus der
-    Finance-Abteilung, der nächste Woche heiratet") (10)
-- Gold labels manually annotated. ~1 hour of work, one-time.
+### Fixture set — spec
+
+See `ARCHITECTURE.md` § "Threat model — three handling tiers" for the tier model that
+this fixture set covers. Goal: ~50 texts, three buckets aligned with the tiers, all
+synthetic (no real PII — committable).
+
+**Format.** One JSON object per line (JSONL), one file per bucket under `fixtures/`:
+
+```json
+{
+  "id": "de-mail-01",
+  "lang": "de",            // "de" | "en"
+  "bucket": "content",     // "content" | "operational" | "secret"
+  "source": "synthetic",   // always "synthetic" in fixtures/; real cases go to fixtures/private/
+  "text": "Hallo Anna, schick mir bitte das Protokoll an thomas.weber@beispiel.de bis Freitag.",
+  "spans": [
+    {"start": 6,  "end": 10, "label": "PERSON",  "tier": "A"},
+    {"start": 41, "end": 65, "label": "EMAIL",   "tier": "A"},
+    {"start": 70, "end": 77, "label": "DATE",    "tier": "A"}
+  ],
+  "notes": "implicit recipient identity via first-name only"
+}
+```
+
+Span offsets are **character offsets into `text`** (not byte offsets — UTF-8-aware).
+Half-open intervals: `text[start:end]` is the span.
+
+**Label inventory.** A label belongs to exactly one tier. The benchmark scores per-label
+recall and aggregates per-tier so we can see "does this model miss health stuff
+specifically?"
+
+| Label | Tier | Notes |
+|---|:-:|---|
+| PERSON | A | Names, also first-name-only references |
+| EMAIL | A | Mail addresses |
+| PHONE | A | Phone numbers, any format |
+| ADDRESS | A | Postal addresses |
+| LOCATION | A | Cities, regions, landmarks tied to the user |
+| ORG | A | Employer, clients, vendors |
+| DATE | A | Specific dates / weekdays in a personal context |
+| APPOINTMENT | A | Calendar entries (use `APPOINTMENT_HEALTH` when health-tagged) |
+| HEALTH | A | Diagnoses, medication, body parts, doctor names |
+| RELATIONSHIP | A | "meine Frau", "Kollege aus dem Controlling", … |
+| FINANCIAL | A | IBAN, balances, salary, transaction fragments |
+| NOTE_SENSITIVE | A | Catch-all for sensitive note content not covered above |
+| IMPLICIT_PII | A | Paraphrased identifying details ("der Nachbar, dessen Sohn…") |
+| PATH | B | Filesystem paths |
+| FILENAME | B | When filename alone identifies a user/project |
+| HOSTNAME | B | Machine names |
+| IP | B | Local + public IP addresses |
+| URL_LOCAL | B | URLs to local services / private intranet |
+| CREDENTIAL | C | Generic credential where type unknown |
+| API_KEY | C | Vendor API keys |
+| PRIVATE_KEY | C | SSH / GPG / TLS private keys |
+| PASSWORD | C | Plain passwords |
+| TOKEN | C | OAuth / bearer / session tokens |
+| CONNECTION_STRING | C | DB DSNs with embedded credentials |
+
+If two labels overlap on the same span, pick the most specific (e.g. `APPOINTMENT_HEALTH`
+over `APPOINTMENT` over `DATE`). Models that emit a less-specific label still count as a
+correct detection at the *tier* level, but lose precision at the *label* level.
+
+**Bucket distribution.**
+
+| Bucket | File | Count | Tier(s) covered | Content |
+|---|---|:-:|:-:|---|
+| Content | `fixtures/content.jsonl` | ~30 | A | Mail bodies, calendar entries, sensitive notes, prose with implicit PII, adversarial paraphrases. Health subset ≥ 5 (Arzttermine, Diagnose-Notizen, Medikation). DE/EN split ≈ 50/50. |
+| Operational | `fixtures/operational.jsonl` | ~10 | B | Bash transcripts, shell config, log lines, code referencing user paths/hostnames/IPs. |
+| Secrets | `fixtures/secrets.jsonl` | ~10 | C | `.env` snippets, hardcoded API keys in source, ssh-config blocks, DSNs, OAuth-token paste-ins. All values clearly fake (use known dummy ranges: example.com, 192.0.2.0/24, etc.). |
+
+**Synthetic-data rules** (so nothing in `fixtures/` accidentally exposes real PII):
+
+- Names: pick from a Swiss/German/English name list, mix common + uncommon; no real
+  public figures.
+- Emails: `*@example.com`, `*@example.de`, `*@beispiel.de`, `*@test.invalid`.
+- Domains: `example.{com,de,org}`, `test.invalid` per RFC 2606.
+- IPs: documentation ranges `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`,
+  `2001:db8::/32`; for local: `127.0.0.1`, `10.0.0.42`, `192.168.1.x`.
+- Phone numbers: prefix `+49 30 9900 xxxx` (Berlin reserved 9900) or
+  `+1-555-01xx` (NANP fictional range).
+- Credentials/keys: obviously fake (`sk-test-...`, `ghp_AAAAAAA...`, all-X placeholders),
+  formatted to look real but never copy real vendor patterns verbatim.
+- Paths: `/Users/alice/...`, `/home/bob/...` — not the author's actual paths.
+- Health: invented conditions and dosages, no real clinical detail.
+
+**Annotation procedure.**
+
+1. Write the text first, naturally. Don't pre-tokenize.
+2. Mark spans in the source (`fixtures/_annotated.md` per bucket?) using `‹label:text›`
+   inline markers — easier to author than offsets.
+3. A small `tools/build_fixtures.py` later converts inline-marked text → JSONL with
+   character offsets. (Issue: bd `apf-4f4.4` — benchmark harness — will include this.)
+4. Each fixture gets a unique `id` like `de-mail-01`, `en-bash-03`, `de-health-02`.
+
+**Out of scope for the fixture set.**
+
+- Round-trip preservation testing (a different artifact — uses the same texts but pipes
+  them through a cloud LLM call).
+- Real personal data: stays in `fixtures/private/` (gitignored), only added by the user
+  after the filter exists.
 
 ### Metrics
 - **Recall** on PII spans (false negatives = leaks — the only metric that really matters)

@@ -12,6 +12,70 @@ pick between the options below. Recommendation at the bottom; not yet executed.
 - **Boundary:** all PII detection / mapping happens locally; only sanitized text crosses
   the network
 
+## Threat model — three handling tiers
+
+What the filter must protect splits into three classes with **fundamentally different
+mechanics**. Mixing them is a category error: a credential and a recipient name look
+similar from the proxy's perspective but need opposite treatment.
+
+### Tier A — Content PII (LLM may reason about it)
+
+What lives here: people, email addresses, phone numbers, postal addresses, locations,
+organisations, dates, appointments, **health information (doctor visits, diagnoses,
+medication)**, relationship hints, financial fragments, sensitive note content,
+implicit PII (paraphrased identifying details).
+
+Handling: **tokenize → LLM works on tokens → resolve at the boundary** (either inside a
+specific `tool_use` arg before local execution, or in the rendered response shown to the
+user). Two-way reversible.
+
+Examples of correct flow:
+- `"Schick die Auswertung an Anna Müller"` → LLM sees
+  `"Schick die Auswertung an <PERSON_1>"` → tool call `send_email(to="<EMAIL_3>")` is
+  resolved against the vault at exec time → cloud LLM never saw `anna.mueller@…`.
+- Health-Termin in calendar: `"Mittwoch 14:00 Dr. Bauer, Kontrolle"` →
+  `"<DATE_2> <APPOINTMENT_HEALTH_1>"` → user sees original in the response.
+
+### Tier B — Operational identifiers (LLM may need to reference them; tool calls almost always need the original)
+
+What lives here: filesystem paths (`/Users/chris/...`), filenames that encode user
+identity, hostnames, local + public IP addresses, machine-specific URLs.
+
+Handling: tokenize, but the **tool-call boundary resolver is the load-bearing piece** —
+every `Read`, `Write`, `Bash`, `grep` needs the real value to execute. Cannot be left
+purely to "resolve only in response to user" because the agent's own actions depend on
+resolution.
+
+Open sub-question: which subset of Tier B is *also* user-policy-configurable? Some users
+want `/Users/chris` masked end-to-end; others consider it harmless. The PoC will treat
+all Tier B values as tokenized by default and let policy loosen later.
+
+### Tier C — Secrets (LLM must never see the value)
+
+What lives here: API keys, OAuth tokens, private keys (SSH, GPG, TLS), passwords,
+database connection strings carrying credentials, `.env`-style secrets.
+
+Handling: **opaque redaction, not reversible round-trip.** The LLM sees at most
+`<SECRET>` with no type or hint. When a tool needs the value, the local executor pulls
+it from environment / keychain / vault directly and substitutes at exec time — the
+secret never crosses the wire and never enters the prompt. Unlike Tier A and B,
+reversibility is *not* a goal; *unobservability* is.
+
+This is the only tier where the existing "anonymize → call LLM → de-anonymize" pattern
+from Presidio etc. is the wrong shape — you don't want the LLM reasoning about secrets
+at all, not even via tokens.
+
+### Implication for the component map
+
+The component map below operates uniformly on text spans, but the **policy table** that
+maps detected labels to handling actions has three branches:
+
+| Tier | Detect | Tokenize | Resolve in response | Resolve at tool boundary | Block & redact |
+|------|:------:|:--------:|:--------------------:|:------------------------:|:--------------:|
+| A — Content | ✅ | ✅ | ✅ | when needed | — |
+| B — Operational | ✅ | ✅ | optional (policy) | **always** | — |
+| C — Secret | ✅ | — | — | resolve from vault | ✅ (never to LLM) |
+
 ## Component map (target shape, regardless of fork choice)
 
 ```
@@ -46,6 +110,19 @@ Three candidate locations:
 The hybrid is most likely correct but most expensive. **PoC plan:** start with the simplest
 working version (resolve everything in tool args, accept leak risk), measure how often it
 actually leaks via narrative, and only build the smarter version if needed.
+
+**Note from the tier model:** the three tiers partition this question differently.
+
+- Tier A (content) is mostly OK with proxy-only resolution — names in narrative are not
+  load-bearing for tool execution.
+- Tier B (operational paths/hosts/IPs) is exactly where the tool-call boundary matters;
+  this is the class that drives the design.
+- Tier C (secrets) sidesteps the question — they're never tokenized into the prompt at
+  all; the agent harness fills them in from a secret store at exec time, independent of
+  any in-proxy resolver.
+
+So Open question 1 is really *"how does the proxy resolve Tier B at the tool boundary
+without leaking via narrative?"* — Tiers A and C are easier sub-cases.
 
 ## Open question 2 — Stack & fork base
 
