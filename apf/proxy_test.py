@@ -217,6 +217,39 @@ def main() -> int:
             sys.exit(1)
         print("  ok    sessions are isolated")
 
+        # Test 4b: low-confidence flag
+        print("\n=== Test 4b: low-confidence header for uncertain spans ===")
+        fake.next_response = {
+            "id": "msg_lc", "type": "message", "role": "assistant",
+            "content": [{"type": "text", "text": "ok"}],
+            "model": "claude-test", "stop_reason": "end_turn",
+        }
+        # An implicit-PII style text that GLiNER will tag with a low score.
+        resp_lc = client.post(
+            "/v1/messages",
+            json={
+                "model": "claude-opus-4-7", "max_tokens": 256,
+                "messages": [{"role": "user", "content": [
+                    {"type": "text", "text":
+                     "Der Kollege aus dem Controlling, der nächste Woche heiratet, "
+                     "hat einen Termin bei Dr. Schmitt."}]}]
+            },
+            headers={"x-api-key": "test-key", "x-apf-session": "session-LC"},
+        )
+        # Check uncertain endpoint
+        u = client.get("/v1/sessions/session-LC/uncertain")
+        uncertain = u.json().get("uncertain", [])
+        # We expect at least one uncertain entry from the implicit-PII paraphrase.
+        if not uncertain:
+            print("FAIL  no uncertain entries flagged for implicit-PII input")
+            sys.exit(1)
+        print(f"  ok    /v1/sessions/.../uncertain reports {len(uncertain)} entries")
+        # Response should carry the header too
+        if "x-apf-uncertain-count" not in resp_lc.headers:
+            print("FAIL  response missing x-apf-uncertain-count header")
+            sys.exit(1)
+        print(f"  ok    x-apf-uncertain-count = {resp_lc.headers['x-apf-uncertain-count']}")
+
         # Test 4: secrets stay opaque
         print("\n=== Test 4: Tier-C secrets stay opaque to the upstream ===")
         fake.next_response = {

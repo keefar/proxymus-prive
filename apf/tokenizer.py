@@ -20,6 +20,7 @@ class Span:
     end: int
     label: str
     tier: str
+    confidence: float = 1.0
 
 
 def _dedupe_spans(spans: list[Span]) -> list[Span]:
@@ -50,7 +51,8 @@ def tokenize_text(text: str, spans: list[Span], vault: Vault) -> str:
         if span.end <= span.start or span.start < 0 or span.end > len(text):
             continue
         original = text[span.start:span.end]
-        entry = vault.get_or_mint(original, span.label, span.tier)
+        entry = vault.get_or_mint(original, span.label, span.tier,
+                                  confidence=span.confidence)
         pieces.append(text[cursor:span.start])
         pieces.append(entry.token)
         cursor = span.end

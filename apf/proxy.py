@@ -74,7 +74,8 @@ def _tokenise_text(text: str, vault: Vault) -> str:
     if not text or not _DETECTOR:
         return text
     detected = _DETECTOR.detect(text)
-    spans = [Span(start=s.start, end=s.end, label=s.label, tier=s.tier)
+    spans = [Span(start=s.start, end=s.end, label=s.label, tier=s.tier,
+                  confidence=getattr(s, "confidence", 1.0))
              for s in detected]
     return tokenize_text(text, spans, vault)
 
@@ -183,6 +184,41 @@ async def health() -> dict:
     }
 
 
+@app.get("/v1/sessions/{session_id}/uncertain")
+async def list_uncertain(session_id: str, threshold: float = 0.85) -> dict:
+    """List vault entries with confidence below the threshold — candidates
+    for a user-confirmation UX. Surface tokens for Tier-A/B; for Tier-C
+    return only a per-session sequence number (real secret values must not
+    leak via this endpoint)."""
+    vault = _VAULTS.get(session_id)
+    if vault is None:
+        return {"session_id": session_id, "uncertain": [], "exists": False}
+    entries = vault.low_confidence_entries(threshold=threshold)
+    out = []
+    secret_idx = 0
+    for e in entries:
+        if e.tier == "C":
+            secret_idx += 1
+            out.append({
+                "kind": "secret",
+                "ref": f"SECRET#{secret_idx}",
+                "label": e.label,
+                "tier": e.tier,
+                "confidence": e.confidence,
+            })
+        else:
+            out.append({
+                "kind": "regular",
+                "token": e.token,
+                "original": e.original,
+                "label": e.label,
+                "tier": e.tier,
+                "confidence": e.confidence,
+            })
+    return {"session_id": session_id, "uncertain": out, "exists": True,
+            "threshold": threshold}
+
+
 @app.post("/v1/messages")
 async def messages(
     request: Request,
@@ -230,10 +266,22 @@ async def messages(
 
     # Detokenise the response for the client.
     rewritten = _detokenise_response_body(upstream_body, vault)
+    # Flag low-confidence entries so the client UI can offer confirmation
+    # for paraphrased / implicit PII the detector wasn't sure about.
+    uncertain = vault.low_confidence_entries(threshold=0.85)
+    response_headers = {"x-apf-session": session_id}
+    if uncertain:
+        # Compact comma-separated list of token IDs in this session that
+        # the user might want to confirm.
+        response_headers["x-apf-uncertain"] = ",".join(
+            e.token if e.tier != "C" else f"SECRET#{i}"
+            for i, e in enumerate(uncertain))
+        # And a structured count summary.
+        response_headers["x-apf-uncertain-count"] = str(len(uncertain))
     return JSONResponse(
         content=rewritten,
         status_code=upstream.status_code,
-        headers={"x-apf-session": session_id},
+        headers=response_headers,
     )
 
 

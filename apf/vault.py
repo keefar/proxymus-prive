@@ -32,6 +32,7 @@ class VaultEntry:
     original: str
     label: str
     tier: str
+    confidence: float = 1.0  # min over all detections that produced this entry
 
 
 class Vault:
@@ -47,21 +48,37 @@ class Vault:
         self._counters: dict[str, int] = {}
         self._lock = Lock()
 
-    def get_or_mint(self, original: str, label: str, tier: str) -> VaultEntry:
-        """Return an existing entry for this value or mint a new one."""
+    def get_or_mint(self, original: str, label: str, tier: str,
+                    confidence: float = 1.0) -> VaultEntry:
+        """Return an existing entry for this value or mint a new one.
+
+        If the value has been seen before, the entry's `confidence` is
+        updated to the *minimum* of the existing and the new value — so if
+        any detection of this string was uncertain, the entry stays flagged
+        as uncertain. (A single high-confidence detection should not
+        override an earlier low-confidence one.)
+        """
         with self._lock:
             entry = self._by_original.get(original)
             if entry is not None:
+                if confidence < entry.confidence:
+                    entry = VaultEntry(
+                        token=entry.token, original=entry.original,
+                        label=entry.label, tier=entry.tier,
+                        confidence=confidence,
+                    )
+                    self._by_original[original] = entry
+                    # Refresh by_token map
+                    for k, v in list(self._by_token.items()):
+                        if v.original == original:
+                            self._by_token[k] = entry
                 return entry
             if tier == "C":
                 token = "<SECRET>"
-                # Tier C: many secrets may all share the `<SECRET>` token
-                # surface. Distinguish them in the by_token map with a
-                # per-instance suffix so reverse lookup is unambiguous *but*
-                # the surface token shown to the LLM stays opaque.
                 internal_token = f"<SECRET#{len(self._by_token) + 1}>"
                 entry = VaultEntry(token=token, original=original,
-                                   label=label, tier=tier)
+                                   label=label, tier=tier,
+                                   confidence=confidence)
                 self._by_original[original] = entry
                 self._by_token[internal_token] = entry
             else:
@@ -69,10 +86,19 @@ class Vault:
                 self._counters[label] = n
                 token = f"<{label}_{n}>"
                 entry = VaultEntry(token=token, original=original,
-                                   label=label, tier=tier)
+                                   label=label, tier=tier,
+                                   confidence=confidence)
                 self._by_original[original] = entry
                 self._by_token[token] = entry
             return entry
+
+    def low_confidence_entries(self, threshold: float = 0.85) -> list[VaultEntry]:
+        """Entries whose confidence is below the high-confidence threshold.
+        These are candidates for a "low-confidence flag" UX pathway: the
+        user should see them surfaced for confirmation, since the detector
+        wasn't sure they're really PII."""
+        return [e for e in self._by_original.values()
+                if e.confidence < threshold]
 
     def get_original(self, token: str) -> str | None:
         """Look up the original value for a token. Returns None if not found

@@ -19,6 +19,7 @@ class Span:
     end: int
     label: str
     tier: str  # "A" | "B" | "C"
+    confidence: float = 1.0  # 1.0 = deterministic (regex), <1.0 = model probability
 
 
 class Detector(Protocol):

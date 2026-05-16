@@ -127,7 +127,8 @@ class NemotronAdapter:
             end = int(ent["end"])
             if end <= start:
                 continue
-            spans.append(Span(start=start, end=end, label=label, tier=tier))
+            spans.append(Span(start=start, end=end, label=label, tier=tier,
+                              confidence=score))
         return spans
 
 
@@ -511,7 +512,8 @@ def _clean_span(text: str, span: Span) -> Span | None:
 
     if not fragment.strip():
         return None
-    return Span(start=start, end=end, label=span.label, tier=span.tier)
+    return Span(start=start, end=end, label=span.label, tier=span.tier,
+                confidence=span.confidence)
 
 
 class _GlinerBase:
@@ -545,7 +547,9 @@ class _GlinerBase:
             end = int(ent["end"])
             if end <= start:
                 continue
-            raw_span = Span(start=start, end=end, label=label, tier=tier)
+            score = float(ent.get("score", 0.5))
+            raw_span = Span(start=start, end=end, label=label, tier=tier,
+                            confidence=score)
             cleaned = _clean_span(text, raw_span)
             if cleaned is not None:
                 spans.append(cleaned)
@@ -886,7 +890,8 @@ class PresidioAdapter:
             tier = LABEL_TIER.get(label)
             if tier is None:
                 continue
-            raw = Span(start=r.start, end=r.end, label=label, tier=tier)
+            raw = Span(start=r.start, end=r.end, label=label, tier=tier,
+                       confidence=float(r.score))
             cleaned = _clean_span(text, raw)
             if cleaned is not None:
                 spans.append(cleaned)
