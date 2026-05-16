@@ -21,6 +21,7 @@ class Span:
     label: str
     tier: str
     confidence: float = 1.0
+    context_key: str | None = None  # for Tier-C: env-var name from KEY=VALUE
 
 
 def _dedupe_spans(spans: list[Span]) -> list[Span]:
@@ -52,7 +53,8 @@ def tokenize_text(text: str, spans: list[Span], vault: Vault) -> str:
             continue
         original = text[span.start:span.end]
         entry = vault.get_or_mint(original, span.label, span.tier,
-                                  confidence=span.confidence)
+                                  confidence=span.confidence,
+                                  secret_key_name=span.context_key)
         pieces.append(text[cursor:span.start])
         pieces.append(entry.token)
         cursor = span.end

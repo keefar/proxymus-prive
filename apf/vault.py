@@ -33,6 +33,10 @@ class VaultEntry:
     label: str
     tier: str
     confidence: float = 1.0  # min over all detections that produced this entry
+    # For Tier-C entries detected via a KEY=VALUE pattern: the KEY name.
+    # The secret resolver can look this up in env/Keychain at tool-call time
+    # so the real secret is supplied by the local store, not the vault.
+    secret_key_name: str | None = None
 
 
 class Vault:
@@ -49,7 +53,8 @@ class Vault:
         self._lock = Lock()
 
     def get_or_mint(self, original: str, label: str, tier: str,
-                    confidence: float = 1.0) -> VaultEntry:
+                    confidence: float = 1.0,
+                    secret_key_name: str | None = None) -> VaultEntry:
         """Return an existing entry for this value or mint a new one.
 
         If the value has been seen before, the entry's `confidence` is
@@ -78,7 +83,8 @@ class Vault:
                 internal_token = f"<SECRET#{len(self._by_token) + 1}>"
                 entry = VaultEntry(token=token, original=original,
                                    label=label, tier=tier,
-                                   confidence=confidence)
+                                   confidence=confidence,
+                                   secret_key_name=secret_key_name)
                 self._by_original[original] = entry
                 self._by_token[internal_token] = entry
             else:

@@ -20,6 +20,10 @@ class Span:
     label: str
     tier: str  # "A" | "B" | "C"
     confidence: float = 1.0  # 1.0 = deterministic (regex), <1.0 = model probability
+    # Optional Tier-C context: the surrounding KEY name when this span came
+    # from a `KEY=value` regex match. Used by the secret resolver to look
+    # up the real value from env/keychain by name instead of from the vault.
+    context_key: str | None = None
 
 
 class Detector(Protocol):
@@ -170,11 +174,14 @@ class RegexBaseline:
         used: list[tuple[int, int]] = []
         for label, rx in self.PATTERNS:
             for m in rx.finditer(text):
+                context_key: str | None = None
                 # KEY=VALUE patterns: capture group 3 is the value (the
-                # secret), groups 1 and 2 are key + optional quote.
+                # secret), groups 1 and 2 are key + optional quote. Capture
+                # the KEY name so the resolver can look up env/keychain.
                 if m.groups() and m.lastindex == 3:
                     start = m.start(3)
                     end = m.end(3)
+                    context_key = m.group(1)
                 elif m.groups() and m.lastindex == 1:
                     # PATH and similar single-group patterns
                     start = m.start(1)
@@ -187,7 +194,8 @@ class RegexBaseline:
                     continue
                 used.append((start, end))
                 seen.append(Span(start=start, end=end, label=label,
-                                 tier=LABEL_TIER[label]))
+                                 tier=LABEL_TIER[label],
+                                 context_key=context_key))
         seen.sort(key=lambda s: s.start)
         return seen
 

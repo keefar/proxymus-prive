@@ -49,6 +49,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .detokenizer import detokenize_text
 from .resolver import resolve_tool_call_args
+from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
 from .tokenizer import Span, tokenize_text
 from .vault import Vault
@@ -104,10 +105,17 @@ def _tokenise_part(part: dict, vault: Vault) -> dict:
     return part
 
 
-def _stub_secret_resolver() -> str | None:
-    """Placeholder. Real implementation reads env var or keychain based on
-    tool_use context. For PoC: return a marker so it's obvious in logs."""
-    return "[FROM_LOCAL_SECRET_STORE]"
+_SECRET_STORE = make_default_store(
+    allow_vault_fallback=os.environ.get("APF_VAULT_FALLBACK", "1") != "0",
+)
+
+
+def _make_secret_resolver(vault: Vault):
+    """Build a vault-bound secret resolver for one tool_use payload.
+    Uses env var lookup first (via the captured KEY name when KEY=VALUE
+    was detected), then falls back to vault.original unless the operator
+    disables vault fallback via APF_VAULT_FALLBACK=0."""
+    return resolver_for_vault(vault, _SECRET_STORE)
 
 
 def _detokenise_response_body(body: dict, vault: Vault) -> dict:
@@ -135,7 +143,7 @@ def _detokenise_response_body(body: dict, vault: Vault) -> dict:
                 **part,
                 "input": resolve_tool_call_args(
                     part.get("input", {}), vault,
-                    secret_resolver=_stub_secret_resolver,
+                    secret_resolver=_make_secret_resolver(vault),
                 ),
             })
         else:
@@ -300,7 +308,7 @@ async def _stream_messages(
     the fly via SSERewriter. Token-spanning boundaries are buffered per
     content block; tool_use input JSON is accumulated and resolved at
     content_block_stop."""
-    rewriter = SSERewriter(vault, secret_resolver=_stub_secret_resolver)
+    rewriter = SSERewriter(vault, secret_resolver=_make_secret_resolver(vault))
 
     async def generate():
         buffer = ""
