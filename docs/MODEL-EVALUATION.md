@@ -6,18 +6,21 @@ Modell-Auswahl klar machen — was funktioniert, was nicht, was lohnt sich noch.
 
 ---
 
-## TL;DR
+## TL;DR (aktualisiert nach Tier-C-Regex-Expansion)
 
-- **Spitze aktuell:** `ensemble-max` — Kombination aus Regex + Microsoft Presidio
+- **Spitze aktuell:** `ensemble-max` v2 — Regex (erweitert) + Microsoft Presidio
   + GLiNER `urchade/gliner_multi_pii-v1` + GLiNER `nvidia/gliner-PII`.
-- **Recall:** 0.73 auf unseren synthetischen Fixtures, 0.72 auf dem
-  standardisierten ai4privacy-200k-Sample. **Beide Sprachen vergleichbar**
-  (DE 0.72 / EN 0.75).
-- **Latenz:** p95 ~300 ms, gut innerhalb des 1.5-s-Budgets.
-- **RAM:** ~4 GB (drei Modelle gleichzeitig resident) — am Limit unseres
-  4-GB-Budgets. Reduzierbar, wenn nötig.
-- **Gap zum Ideal (≥ 0.95 Recall):** ~0.20–0.25. Ein Teil ist schließbar
-  (Punkte unten), ein Teil ist bei 1.7B-Klasse-Modellen strukturell hart.
+- **Recall:** **0.81** auf unseren synthetischen Fixtures, 0.72 auf dem
+  standardisierten ai4privacy-200k-Sample. DE 0.79 / EN 0.84.
+- **Tier-C-Recall (Secrets) jetzt 0.94** (vorher 0.57). Der größte
+  Einzelgewinn der Session — durch erweiterte Regex-Patterns für PEM-Blöcke,
+  KEY=VALUE-env-Assignments, OAuth-Bearer-Tokens, DSN-Connection-Strings,
+  Base64-Secret-Heuristik. Tier-C-Lecks sind die teuersten — jetzt nahezu
+  geschlossen.
+- **Latenz:** p95 ~270 ms, gut innerhalb des 1.5-s-Budgets.
+- **RAM:** ~4 GB (drei Modelle gleichzeitig resident).
+- **Gap zum Ideal (≥ 0.95 Recall):** noch ~0.15. Rest ist überwiegend
+  implizite/paraphrasierte PII, strukturell schwer mit lokalen Modellen.
 - **Was nicht hilft:** weiteres Stage-2-Generativ-Modell dazuhängen
   (Anonymizer-SLM brachte +3 pp Recall für 40× Latenz und *senkte* die
   Tier-C-Recall).
@@ -37,9 +40,11 @@ Zwei Test-Sets, gleicher Code:
 
 | Modell | unser T-rec | ai4p T-rec | DE | EN | p95 ms | RAM | Anmerkung |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|---|
-| **ensemble-max** ⭐ | **0.734** | **0.719** | 0.71 | 0.75 | 298 | ~4 GB | regex+presidio+2×GLiNER |
-| ensemble-fast | 0.715 | 0.540 | 0.72 | 0.71 | 76 | 2.8 GB | regex+GLiNER-multi |
-| gliner-nvidia | 0.688 | **0.660** | 0.67 | 0.70 | 199 | 3.9 GB | nvidia/gliner-PII |
+| **ensemble-max v2** ⭐ | **0.812** | **0.716** | 0.79 | 0.84 | 274 | ~4 GB | + Tier-C-Regex-Expansion, Tier-C 0.94 |
+| ensemble-fast v2 | 0.747 | 0.540 | 0.73 | 0.76 | 79 | 2.8 GB | regex(v2)+GLiNER-multi, Tier-C **1.00** |
+| ensemble-max (v1) | 0.734 | 0.719 | 0.71 | 0.75 | 298 | ~4 GB | vor Regex-Expansion |
+| ensemble-fast (v1) | 0.715 | 0.540 | 0.72 | 0.71 | 76 | 2.8 GB | vor Regex-Expansion |
+| gliner-nvidia | 0.688 | 0.660 | 0.67 | 0.70 | 199 | 3.9 GB | nvidia/gliner-PII |
 | gliner | 0.667 | 0.530 | 0.71 | 0.63 | 80 | 2.8 GB | urchade/gliner_multi_pii-v1 |
 | ensemble-full | 0.747 | — | 0.76 | 0.73 | 3201 | 3.2 GB | + Anonymizer = LATENZ-TOT |
 | gliner-knowledgator | 0.499 | 0.486 | 0.46 | 0.54 | 213 | 3+ GB | mehr Labels, schwächer überall |

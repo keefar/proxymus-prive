@@ -147,9 +147,15 @@ def main() -> int:
     if args.fixtures:
         fixture_paths = [Path(p) for p in args.fixtures]
     else:
-        fixture_paths = sorted(FIXTURE_DIR.glob("*.jsonl"))
+        # Default: our hand-crafted bucket fixtures (the synthetic adversarial
+        # test set). External datasets like ai4privacy_sample.jsonl are NOT
+        # included by default — pass --fixtures explicitly to use them, so
+        # benchmark numbers stay comparable across runs.
+        default_names = ("content.jsonl", "operational.jsonl", "secrets.jsonl")
+        fixture_paths = [FIXTURE_DIR / n for n in default_names
+                         if (FIXTURE_DIR / n).exists()]
         if not fixture_paths:
-            raise SystemExit(f"no fixture files in {FIXTURE_DIR}")
+            raise SystemExit(f"no default fixture files in {FIXTURE_DIR}")
 
     result = run(args.adapter, fixture_paths)
 
