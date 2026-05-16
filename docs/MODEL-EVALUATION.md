@@ -6,12 +6,16 @@ Modell-Auswahl klar machen — was funktioniert, was nicht, was lohnt sich noch.
 
 ---
 
-## TL;DR (aktualisiert nach Tier-C-Regex-Expansion)
+## TL;DR (Stand 2026-05-17 nach Round-2-Iteration)
 
-- **Spitze aktuell:** `ensemble-max` v2 — Regex (erweitert) + Microsoft Presidio
-  + GLiNER `urchade/gliner_multi_pii-v1` + GLiNER `nvidia/gliner-PII`.
-- **Recall:** **0.81** auf unseren synthetischen Fixtures, 0.72 auf dem
-  standardisierten ai4privacy-200k-Sample. DE 0.79 / EN 0.84.
+- **Spitze aktuell:** `ensemble-max` — Regex (Tier-C-erweitert) + Microsoft
+  Presidio + GLiNER `urchade/gliner_multi_pii-v1` + GLiNER `nvidia/gliner-PII`.
+- **Recall:**
+  - **0.82** auf unseren synthetischen Fixtures (50 Fälle, adversarial)
+  - **0.72** auf ai4privacy/pii-masking-**200k** Sample (200 Fälle)
+  - **0.77** auf ai4privacy/pii-masking-**300k** Sample (303 Fälle) — die
+    repräsentativste externe Zahl, mit DE 0.76 / EN 0.77 fast perfekt balanciert
+    und Tier-B (Operational PII) bei **0.99**.
 - **Tier-C-Recall (Secrets) jetzt 0.94** (vorher 0.57). Der größte
   Einzelgewinn der Session — durch erweiterte Regex-Patterns für PEM-Blöcke,
   KEY=VALUE-env-Assignments, OAuth-Bearer-Tokens, DSN-Connection-Strings,
