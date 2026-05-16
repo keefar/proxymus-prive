@@ -368,6 +368,7 @@ class Qwen3Adapter:
 # and map back to our inventory.
 
 GLINER_LABELS = [
+    # English descriptive labels
     "person",
     "email",
     "phone number",
@@ -396,9 +397,27 @@ GLINER_LABELS = [
     "password",
     "token",
     "database connection string",
+    # German-localized labels — GLiNER's multilingual base benefits from
+    # parallel labels in the target language (apf-73d).
+    "deutscher Vorname",
+    "deutscher Nachname",
+    "deutsche Adresse",
+    "deutsche Telefonnummer",
+    "Arzttermin",
+    "Diagnose",
+    "Medikament",
+    "Krankenkasse",
+    "Familienmitglied",
+    "Geburtsdatum",
+    "Arbeitgeber",
+    "Beruf",
+    "deutsche Stadt",
+    "Bundesland",
+    "Postleitzahl",
 ]
 
 GLINER_LABEL_MAP: dict[str, str] = {
+    # English
     "person": "PERSON",
     "email": "EMAIL",
     "phone number": "PHONE",
@@ -427,6 +446,22 @@ GLINER_LABEL_MAP: dict[str, str] = {
     "password": "PASSWORD",
     "token": "TOKEN",
     "database connection string": "CONNECTION_STRING",
+    # German parallel labels
+    "deutscher vorname": "PERSON",
+    "deutscher nachname": "PERSON",
+    "deutsche adresse": "ADDRESS",
+    "deutsche telefonnummer": "PHONE",
+    "arzttermin": "APPOINTMENT",
+    "diagnose": "HEALTH",
+    "medikament": "HEALTH",
+    "krankenkasse": "HEALTH",
+    "familienmitglied": "RELATIONSHIP",
+    "geburtsdatum": "DATE",
+    "arbeitgeber": "ORG",
+    "beruf": "NOTE_SENSITIVE",
+    "deutsche stadt": "LOCATION",
+    "bundesland": "LOCATION",
+    "postleitzahl": "ADDRESS",
 }
 
 
@@ -499,7 +534,7 @@ class _GlinerBase:
                                            threshold=self.threshold)
         spans: list[Span] = []
         for ent in raw:
-            label_in = ent.get("label", "")
+            label_in = ent.get("label", "").lower()
             label = GLINER_LABEL_MAP.get(label_in)
             if label is None:
                 continue
