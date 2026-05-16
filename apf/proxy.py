@@ -45,10 +45,11 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Header, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .detokenizer import detokenize_text
 from .resolver import resolve_tool_call_args
+from .sse import SSERewriter, format_sse_event, parse_sse_event
 from .tokenizer import Span, tokenize_text
 from .vault import Vault
 
@@ -244,6 +245,13 @@ async def messages(
     if auth:
         upstream_headers["authorization"] = auth
 
+    # Streaming path: tokenised request is forwarded with `stream: true`,
+    # response is rewritten on the fly via SSERewriter.
+    if tokenised.get("stream") is True:
+        return await _stream_messages(
+            session_id, vault, tokenised, upstream_headers
+        )
+
     async with httpx.AsyncClient(timeout=120.0) as client:
         upstream = await client.post(
             f"{ANTHROPIC_UPSTREAM}/v1/messages",
@@ -282,6 +290,47 @@ async def messages(
         content=rewritten,
         status_code=upstream.status_code,
         headers=response_headers,
+    )
+
+
+async def _stream_messages(
+    session_id: str, vault: Vault, tokenised_body: dict, upstream_headers: dict,
+) -> StreamingResponse:
+    """SSE relay: forward tokenised stream request, rewrite each event on
+    the fly via SSERewriter. Token-spanning boundaries are buffered per
+    content block; tool_use input JSON is accumulated and resolved at
+    content_block_stop."""
+    rewriter = SSERewriter(vault, secret_resolver=_stub_secret_resolver)
+
+    async def generate():
+        buffer = ""
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream(
+                "POST",
+                f"{ANTHROPIC_UPSTREAM}/v1/messages",
+                json=tokenised_body,
+                headers=upstream_headers,
+            ) as upstream:
+                async for chunk in upstream.aiter_text():
+                    buffer += chunk
+                    while True:
+                        ev_type, ev_data, buffer = parse_sse_event(buffer)
+                        if ev_type is None:
+                            break
+                        if ev_data is None:
+                            # Forward malformed/empty events as-is.
+                            yield (f"event: {ev_type}\ndata: \n\n").encode("utf-8")
+                            continue
+                        for out_type, out_data in rewriter.feed(ev_type, ev_data):
+                            yield format_sse_event(out_type, out_data)
+        # End of upstream — flush any held text.
+        for out_type, out_data in rewriter.flush():
+            yield format_sse_event(out_type, out_data)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"x-apf-session": session_id, "cache-control": "no-cache"},
     )
 
 
