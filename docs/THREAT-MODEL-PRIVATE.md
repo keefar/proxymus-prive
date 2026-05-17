@@ -13,7 +13,46 @@ human would: drafting messages, asking medical questions, planning
 appointments, processing notes, journaling, getting help with admin and
 finances. The threat model below is built for that user.
 
-## 0. Scope (decided 2026-05-17)
+## 0. Framing: organisational vs individual frame (decided 2026-05-17)
+
+The legal anchors this document leans on — GDPR Art. 9, AGG §1, HIPAA,
+EEOC — were written as **organisational obligations**. They constrain
+what entities may do with personal data. They are necessary for
+choosing detector categories with established legal weight, but they
+are not sufficient as a threat model from the individual user's
+perspective. The two frames mirror imperfectly:
+
+- **Org-frame** asks: *what may this organisation not store, process,
+  or share?* Compliance breach is the failure mode.
+- **Individual-frame** asks: *what should I not hand out, knowing
+  organisations cannot be trusted to honour their obligations
+  perfectly?* Personal harm is the failure mode.
+
+A risk visible from the user side often does not appear in the
+org-frame at all — examples: profile-aggregation across years of one
+user × one provider relationship, lock-in via accumulated history,
+third-party-PII the user mentions about others, training-data
+residuality. These motivate categories in §2 that have no direct
+GDPR/AGG/HIPAA anchor; their justification is the harm vector, not
+the regulation.
+
+The full mapping between this taxonomy and individual-frame failure
+patterns lives in `docs/INDIVIDUAL-PRIVACY-FAILURES.md` (11 IPF
+entries, each mapped to Solove 2006 subtypes, Lee 2024 AI-privacy
+labels, and a Nissenbaum-CI norm-violation worksheet). When in doubt
+which side of the frame an entry sits on, the IPF doc is the one
+that grounds it in user-side harm rather than regulator language.
+
+**User-facing mental model — the postcard test.** A short heuristic
+that survived several drafts of UX language: *if you wouldn't write
+this on a postcard to a stranger, the proxy treats it as sensitive*.
+This is the surface vocabulary in onboarding and filter-hover hints,
+not a defining technical criterion — but it captures the org-frame
+inversion ("what should I not hand out") without legal jargon.
+
+---
+
+## 0.5. Scope (decided 2026-05-17)
 
 **In scope.** Assistant-agent processing of the user's own data and
 correspondence: calendar parsing, email categorisation, reminder management,
