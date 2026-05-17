@@ -193,6 +193,23 @@ async def health() -> dict:
     }
 
 
+@app.get("/v1/sessions/{session_id}/status")
+async def session_status(session_id: str) -> dict:
+    """On-demand vault summary. Counts only — no original values, no surface
+    tokens. Lets a user (or their wrapper UI) answer 'what has the proxy done
+    in this session?' without trawling logs.
+
+    Per docs/THREAT-MODEL-PRIVATE.md §5.4, this is the data source for
+    cumulative-profile warnings: orthogonal categories per_label['…'] and
+    third-party counts let a client compute a profile-diversity score.
+    """
+    vault = _VAULTS.get(session_id)
+    if vault is None:
+        return {"session_id": session_id, "exists": False, "summary": None}
+    return {"session_id": session_id, "exists": True,
+            "summary": vault.summary()}
+
+
 @app.get("/v1/sessions/{session_id}/uncertain")
 async def list_uncertain(session_id: str, threshold: float = 0.85) -> dict:
     """List vault entries with confidence below the threshold — candidates
@@ -282,23 +299,48 @@ async def messages(
 
     # Detokenise the response for the client.
     rewritten = _detokenise_response_body(upstream_body, vault)
-    # Flag low-confidence entries so the client UI can offer confirmation
-    # for paraphrased / implicit PII the detector wasn't sure about.
-    uncertain = vault.low_confidence_entries(threshold=0.85)
-    response_headers = {"x-apf-session": session_id}
-    if uncertain:
-        # Compact comma-separated list of token IDs in this session that
-        # the user might want to confirm.
-        response_headers["x-apf-uncertain"] = ",".join(
-            e.token if e.tier != "C" else f"SECRET#{i}"
-            for i, e in enumerate(uncertain))
-        # And a structured count summary.
-        response_headers["x-apf-uncertain-count"] = str(len(uncertain))
+    response_headers = _build_response_headers(session_id, vault)
     return JSONResponse(
         content=rewritten,
         status_code=upstream.status_code,
         headers=response_headers,
     )
+
+
+def _build_response_headers(session_id: str, vault: Vault) -> dict[str, str]:
+    """Compose the apf-* response headers from session vault state.
+
+    Per docs/THREAT-MODEL-PRIVATE.md §5.4 / apf-80c, the UX-feedback channel
+    is response headers (machine-readable, default-invisible) plus the
+    /v1/sessions/{id}/status endpoint for on-demand inspection. Headers
+    carry counts only — never originals, never surface tokens for sensitive
+    entries (only uncertain ones are token-listed, because the user
+    explicitly wants to inspect them).
+    """
+    headers = {"x-apf-session": session_id}
+    summary = vault.summary()
+    if summary["total"]:
+        headers["x-apf-replaced-count"] = str(summary["total"])
+        # Per-tier breakdown: 'A=3,B=1,C=2' compact form.
+        headers["x-apf-replaced-tiers"] = ",".join(
+            f"{tier}={cnt}" for tier, cnt in sorted(summary["per_tier"].items())
+        )
+        # Per-label distribution: same compact form. Categories not values.
+        headers["x-apf-replaced-categories"] = ",".join(
+            f"{label}={cnt}"
+            for label, cnt in sorted(summary["per_label"].items())
+        )
+        if summary["third_party"]:
+            headers["x-apf-third-party-count"] = str(summary["third_party"])
+    # Uncertain channel (apf-2yn pre-existing): list of token IDs the user
+    # may want to inspect via the uncertain endpoint.
+    uncertain = vault.low_confidence_entries(threshold=0.85)
+    if uncertain:
+        headers["x-apf-uncertain"] = ",".join(
+            e.token if e.tier != "C" else f"SECRET#{i}"
+            for i, e in enumerate(uncertain))
+        headers["x-apf-uncertain-count"] = str(len(uncertain))
+    return headers
 
 
 async def _stream_messages(
@@ -335,10 +377,14 @@ async def _stream_messages(
         for out_type, out_data in rewriter.flush():
             yield format_sse_event(out_type, out_data)
 
+    # Request-side tokenisation is complete; summary headers are stable from
+    # here on (LLM output doesn't add new vault entries, only references them).
+    headers = _build_response_headers(session_id, vault)
+    headers["cache-control"] = "no-cache"
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={"x-apf-session": session_id, "cache-control": "no-cache"},
+        headers=headers,
     )
 
 

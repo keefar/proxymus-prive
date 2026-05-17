@@ -138,5 +138,28 @@ class Vault:
     def all_entries(self) -> list[VaultEntry]:
         return list(self._by_original.values())
 
+    def summary(self) -> dict:
+        """Compact session summary for the UX-feedback header.
+
+        Returns counts only — no original values or surface tokens — so this
+        can be exposed via response header / status endpoint without itself
+        becoming a leak channel. The keys are stable strings safe to render
+        in a UI.
+        """
+        per_tier: dict[str, int] = {}
+        per_label: dict[str, int] = {}
+        third_party = 0
+        for e in self._by_original.values():
+            per_tier[e.tier] = per_tier.get(e.tier, 0) + 1
+            per_label[e.label] = per_label.get(e.label, 0) + 1
+            if e.third_party:
+                third_party += 1
+        return {
+            "total": len(self._by_original),
+            "per_tier": per_tier,
+            "per_label": per_label,
+            "third_party": third_party,
+        }
+
     def __len__(self) -> int:
         return len(self._by_original)

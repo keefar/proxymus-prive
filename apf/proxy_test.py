@@ -284,6 +284,31 @@ def main() -> int:
             sys.exit(1)
         print(f"  ok    x-apf-uncertain-count = {resp_lc.headers['x-apf-uncertain-count']}")
 
+        # Test 4c: UX-feedback headers + status endpoint (apf-80c)
+        print("\n=== Test 4c: replaced-count headers + /status endpoint ===")
+        # session-A vault has at minimum: Anna (PERSON), thomas.weber@... (EMAIL),
+        # Freitag (DATE) → 3 tier-A entries. The session-LC vault from Test 4b
+        # adds more. Use session-A here because counts are predictable.
+        for hdr in ("x-apf-replaced-count",
+                    "x-apf-replaced-tiers",
+                    "x-apf-replaced-categories"):
+            if hdr not in resp.headers:
+                print(f"FAIL  response missing {hdr} header")
+                sys.exit(1)
+        cnt = int(resp.headers["x-apf-replaced-count"])
+        if cnt < 3:
+            print(f"FAIL  x-apf-replaced-count too low: {cnt}")
+            sys.exit(1)
+        print(f"  ok    replaced-count={cnt}, "
+              f"tiers={resp.headers['x-apf-replaced-tiers']!r}, "
+              f"categories={resp.headers['x-apf-replaced-categories']!r}")
+        s = client.get("/v1/sessions/session-A/status")
+        st = s.json()
+        if not st.get("exists") or st["summary"]["total"] != cnt:
+            print(f"FAIL  /status mismatch with header: {st!r} vs cnt={cnt}")
+            sys.exit(1)
+        print(f"  ok    /status reports same total: {st['summary']['total']}")
+
         # Test 4: secrets stay opaque
         print("\n=== Test 4: Tier-C secrets stay opaque to the upstream ===")
         fake.next_response = {
