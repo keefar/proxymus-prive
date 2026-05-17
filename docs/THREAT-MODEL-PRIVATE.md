@@ -217,6 +217,7 @@ any single jurisdiction's special-category list.
 | H13 | Family medical history | "meine Mutter hatte Brustkrebs mit 45", "father's Alzheimer's started early" | Same as H12; blast radius across family tree | hard | A-3p, A+cat |
 | H14 | Disability status | "mit GdB 50 anerkannt", "filing for SSDI", "Schwerbehindertenausweis" | Discrimination (AGG §1 protects but doesn't prevent); insurance | medium | A+cat |
 | H15 | Neurodivergence (Autism, ADHD, dyslexia) | "auf dem Autismus-Spektrum", "since my ADHD diagnosis at 38" | Stigma; employer perception; rarely formal discrimination but real social cost | medium → hard | A+cat |
+| H16 | Medical record numbers / Krankenversichertennummer / health-plan beneficiary ID | "Versichertennummer A123456789", "MRN 02844721 at Charité", "Medicare ID 1ABC23DE4FG" | Identity theft for medical fraud; cross-system PHI linkage; HIPAA-listed identifier | easy (structured ID) | A |
 
 ### 2.2 Sexuality, gender, relationships
 
@@ -245,6 +246,7 @@ any single jurisdiction's special-category list.
 | P6 | Controversial opinions | "AfD-Wahlerfolg ist mir egal", "Israel-Hamas take that I won't say out loud" | Social cost asymmetric — easy to be cancelled, hard to be re-employed | hard | A+cat |
 | P7 | Activism / protest participation | "war auf der Lützerath-Demo", "got kettled at the Gaza protest" | Border-crossing in some jurisdictions; surveillance; employer disqualification in sensitive fields | hard | A+cat |
 | P8 | Whistleblowing / leak intent | "drafting the disclosure for the press", "thinking about reporting my manager to BaFin" | Career-ending if employer learns first; legal exposure | hard | A+cat (treat as Tier-C-adjacent — see §5) |
+| P9 | Trade-union membership | "ver.di-Mitgliedsausweis", "joined IG Metall in 2019", "as the shop steward at the works council" | Employer retaliation; explicitly protected by GDPR Art. 9 and AGG §1; surveillance lists in some non-democratic destinations | medium (named unions) → hard (paraphrase) | A+cat |
 
 ### 2.4 Legal & criminal
 
@@ -258,6 +260,7 @@ any single jurisdiction's special-category list.
 | L6 | Asylum / refugee status | "mein Asylverfahren in der Anhörungsphase", "asylum interview scheduled" | Persecution risk if leaked back to origin country; community implications | hard | A+cat (highest sensitivity tier) |
 | L7 | Custody / Sorgerecht disputes | "vor dem Familiengericht im Mai", "supervised visitation order" | Material for the *other* side; child welfare authorities | hard | A, A-3p |
 | L8 | Restraining / protection orders | "Gewaltschutzanordnung gegen meinen Ex", "DV restraining order" | Safety (perpetrator access); also stigma if user is the *subject* | hard | A+cat |
+| L9 | Professional certificate / license / credential numbers | "Approbationsnummer 4711-A", "California Bar #234567", "Cosmetology license CMT-2023-558" | Targeted impersonation; license-board reporting weaponised by adversaries; HIPAA-listed identifier in medical contexts | medium (formats vary by profession) | A |
 
 ### 2.5 Financial
 
@@ -292,6 +295,7 @@ any single jurisdiction's special-category list.
 | I3 | Refugee / migration history | "nach 2015 nach Deutschland", "fled Iran in 2009" | Same as I1 plus persecution-risk depending on origin | hard | A+cat |
 | I4 | Native language / accent disclosure | "as a non-native speaker", "Muttersprache Farsi" | Profile-builder; combined with I2 sharpens identification | hard | A |
 | I5 | Disability (non-medical framing) | "im Rollstuhl seit dem Unfall", "as a Deaf user" | Discrimination at work / housing / services | medium | A+cat (overlap with H14) |
+| I6 | Age / date-of-birth (as protected category, not just identifier) | "Jahrgang 1968 noch im Bewerbungsmarkt", "born 1983-04-12", "mit 55 als IT-Quereinsteiger" | Age discrimination (AGG §1, US ADEA 40+); date-of-birth combines with name to triangulate identity (Sweeney quasi-identifier) | easy (DOB regex) → medium (Jahrgang/age-narrative phrasing) | A+cat |
 
 ### 2.8 Profile-able behaviour
 
@@ -307,8 +311,9 @@ others is theatre — see §3 cross-cutting.
 | B4 | Frequent locations | "mein Stammcafé Bonanza", "the gym on 14th" | Same as B3 | medium | A |
 | B5 | Biometric — voice / gait / typing | "voice memo attached", "fingerprint scan failed three times" | Re-identification across services; the metadata is the leak, not the content | hard (not text-level usually) | A or new |
 | B6 | Purchase patterns / shopping | "Rewe gestern 87 €, Amazon zwei Pakete heute" | Profile-builder; spending behaviour leaks lifestyle | medium | A |
-| B7 | Device / browser / IP fingerprint | "from my home IP 84.137.x.x", "Safari Mac M5" | Cross-session linkability outside the LLM context | easy | B |
+| B7 | Device / browser / IP / serial / MAC / IMEI fingerprint | "home IP 84.137.x.x", "Safari Mac M5", "MAC 88:e9:fe:5a:21:34", "IMEI 359872044123456", "iPhone serial F2LXG3HKMD60" | Cross-session linkability outside the LLM context; HIPAA-listed identifier in medical-device contexts | easy (regex per format) | B |
 | B8 | Calendar regularity | "Mittwoch immer 14:00 Therapeutin" | Combines B3 and a Tier-A category — *structural* leak even if each cell tokenised | hard | A+cat |
+| B9 | Vehicle identifiers — VIN, Kennzeichen / license plate | "Kennzeichen B-AB 1234", "VIN 1HGCM82633A123456", "rental car 4-AB-CD reservation" | Physical-world tracking; DMV / insurance correlation; HIPAA-listed identifier | easy (regex per jurisdiction) | A |
 
 ### 2.9 Relationship-network info
 
