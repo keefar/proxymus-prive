@@ -50,6 +50,7 @@ from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .detokenizer import detokenize_text
+from .endpoint_policy import POLICY_OFF, policy_for_url
 from .resolver import resolve_tool_call_args
 from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
@@ -59,6 +60,11 @@ from .vault import Vault
 ANTHROPIC_UPSTREAM = os.environ.get(
     "APF_UPSTREAM_BASE", "https://api.anthropic.com"
 )
+# Cached at module load so policy decisions don't hit disk per request.
+# Edits to user config require a proxy restart to take effect for the
+# default upstream (matches the env-var semantics; per-request override
+# would be added in apf-fwt's multi-endpoint work).
+_UPSTREAM_POLICY = policy_for_url(ANTHROPIC_UPSTREAM)
 PROXY_PORT = int(os.environ.get("APF_PORT", "8765"))
 
 # Per-session vaults. In production: bounded LRU with eviction; for PoC, dict.
@@ -312,8 +318,14 @@ async def messages(
     inbound = await request.json()
     session_id, vault = _get_or_create_vault(x_apf_session)
 
-    # Tokenise outbound.
-    tokenised = _tokenise_request_body(inbound, vault)
+    # Per apf-ycu: if the upstream is a trusted endpoint (local engines,
+    # user-configured exceptions), bypass tokenisation entirely. The proxy
+    # then acts as a transparent passthrough — useful for routing all
+    # traffic through one tool but only filtering cloud destinations.
+    if _UPSTREAM_POLICY == POLICY_OFF:
+        tokenised = inbound
+    else:
+        tokenised = _tokenise_request_body(inbound, vault)
 
     # Forward to Anthropic. We pass through Authorization/x-api-key from the
     # caller. The proxy itself doesn't hold an API key.
