@@ -111,15 +111,22 @@ class DftaRegexAdapter:
             tier = LABEL_TIER.get(our_label)
             if tier is None:
                 continue
-            offset = _find_offset(text, match.text, taken)
-            if offset is None:
-                continue  # value not findable in original text (rare; possibly stripped)
-            start, end = offset
+            # Prefer native start/end (added upstream by our PR; default -1 on
+            # older pins). Fall back to text.find() for compatibility.
+            ms = getattr(match, "start", -1)
+            me = getattr(match, "end", -1)
+            if ms >= 0 and me > ms and text[ms:me] == match.text:
+                start, end = ms, me
+            else:
+                offset = _find_offset(text, match.text, taken)
+                if offset is None:
+                    continue
+                start, end = offset
             taken.add((start, end))
             spans.append(Span(
                 start=start, end=end,
                 label=our_label, tier=tier,
-                confidence=1.0,  # deterministic regex
+                confidence=1.0,
             ))
         spans.sort(key=lambda s: s.start)
         return spans
