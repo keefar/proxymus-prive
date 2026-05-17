@@ -51,6 +51,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from .detokenizer import detokenize_text
 from .endpoint_policy import POLICY_OFF, policy_for_url
+from .local_only import categories_in, refusal_body
 from .resolver import resolve_tool_call_args
 from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
@@ -114,6 +115,54 @@ def _tokenise_text(text: str, vault: Vault) -> str:
                   confidence=getattr(s, "confidence", 1.0))
              for s in detected]
     return tokenize_text(cleaned, spans, vault)
+
+
+def _scan_text_for_locked(text: str) -> list[str]:
+    """Read-only locked-label scan. Detects spans on `text`, returns the
+    set of locked-label names encountered. Does NOT tokenise, does NOT
+    write to the vault.
+
+    This is run before tokenisation (apf-enr) so locked values are never
+    vaulted at all — the proxy refuses to forward and the values stay in
+    the original request body, which is discarded along with the 422
+    response.
+    """
+    if not text or not _DETECTOR:
+        return []
+    detected = _DETECTOR.detect(text)
+    return categories_in(detected)
+
+
+def _scan_body_for_locked(body: dict) -> list[str]:
+    """Walk the same shape as _tokenise_request_body but only collect
+    locked-category labels. Returns deduplicated list (ordered by first
+    sight)."""
+    seen: list[str] = []
+    def _add(labels: list[str]) -> None:
+        for l in labels:
+            if l not in seen:
+                seen.append(l)
+    if isinstance(body.get("system"), str):
+        _add(_scan_text_for_locked(body["system"]))
+    for msg in body.get("messages", []) or []:
+        content = msg.get("content")
+        if isinstance(content, str):
+            _add(_scan_text_for_locked(content))
+        elif isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "text":
+                    _add(_scan_text_for_locked(part.get("text", "")))
+                elif part.get("type") == "tool_result":
+                    tc = part.get("content")
+                    if isinstance(tc, str):
+                        _add(_scan_text_for_locked(tc))
+                    elif isinstance(tc, list):
+                        for tp in tc:
+                            if isinstance(tp, dict) and tp.get("type") == "text":
+                                _add(_scan_text_for_locked(tp.get("text", "")))
+    return seen
 
 
 def _tokenise_block(block: Any, vault: Vault) -> Any:
@@ -317,6 +366,22 @@ async def messages(
 ) -> Response:
     inbound = await request.json()
     session_id, vault = _get_or_create_vault(x_apf_session)
+
+    # Per apf-enr: refuse to forward content in locked categories
+    # (asylum, abuse, whistleblower intent, undocumented immigration).
+    # Tokenisation is not safe enough for these — the fact of processing
+    # them is itself a leak. Scan is read-only; values never enter the
+    # vault. Skipped when policy=off because the values aren't going to
+    # a cloud upstream anyway.
+    if _UPSTREAM_POLICY != POLICY_OFF:
+        locked = _scan_body_for_locked(inbound)
+        if locked:
+            return JSONResponse(
+                content=refusal_body(locked),
+                status_code=422,
+                headers={"x-apf-session": session_id,
+                         "x-apf-locked-categories": ",".join(locked)},
+            )
 
     # Per apf-ycu: if the upstream is a trusted endpoint (local engines,
     # user-configured exceptions), bypass tokenisation entirely. The proxy

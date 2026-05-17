@@ -373,6 +373,57 @@ def main() -> int:
         print(f"  ok    session whitelist: persistent pass-through")
         print(f"        upstream saw: {out_wl!r}")
 
+        # Test 4e: locked-category refusal (apf-enr)
+        print("\n=== Test 4e: locked-category triggers 422 refusal ===")
+        # The real detector vocabulary doesn't emit ASYLUM_DETAIL etc. yet,
+        # so we temporarily extend the locked set to include a label the
+        # detector DOES emit. PERSON is reliable across our adapters.
+        old_locked = os.environ.get("APF_LOCKED_LABELS")
+        os.environ["APF_LOCKED_LABELS"] = "PERSON"
+        try:
+            fake.next_response = {  # should not be consumed
+                "id": "msg_locked", "type": "message", "role": "assistant",
+                "content": [{"type": "text", "text": "should not reach"}],
+                "model": "claude-test", "stop_reason": "end_turn",
+            }
+            resp_locked = client.post(
+                "/v1/messages",
+                json={
+                    "model": "claude-opus-4-7", "max_tokens": 256,
+                    "messages": [{"role": "user", "content": [
+                        {"type": "text", "text":
+                         "Hi Anna, just checking in about Friday."}]}]
+                },
+                headers={"x-api-key": "test-key", "x-apf-session": "session-LK"},
+            )
+            assert_eq(resp_locked.status_code, 422, "status 422 on locked label")
+            body = resp_locked.json()
+            if body.get("error", {}).get("type") != "apf_locked_category":
+                print(f"FAIL  refusal body shape wrong: {body!r}")
+                sys.exit(1)
+            if "PERSON" not in body["error"]["locked_categories"]:
+                print(f"FAIL  locked_categories missing PERSON: {body!r}")
+                sys.exit(1)
+            if "x-apf-locked-categories" not in resp_locked.headers:
+                print("FAIL  x-apf-locked-categories header missing")
+                sys.exit(1)
+            print(f"  ok    refusal body: type=apf_locked_category, "
+                  f"locked_categories={body['error']['locked_categories']}")
+            # And: the locked value must NOT have been vaulted
+            vault_lk = proxy._VAULTS.get("session-LK")
+            if vault_lk is not None:
+                anna_in_vault = any(e.original == "Anna"
+                                    for e in vault_lk.all_entries())
+                if anna_in_vault:
+                    print(f"FAIL  locked value was vaulted despite refusal")
+                    sys.exit(1)
+            print(f"  ok    locked value never entered the vault")
+        finally:
+            if old_locked is None:
+                del os.environ["APF_LOCKED_LABELS"]
+            else:
+                os.environ["APF_LOCKED_LABELS"] = old_locked
+
         # Test 4: secrets stay opaque
         print("\n=== Test 4: Tier-C secrets stay opaque to the upstream ===")
         fake.next_response = {
