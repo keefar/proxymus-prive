@@ -309,6 +309,70 @@ def main() -> int:
             sys.exit(1)
         print(f"  ok    /status reports same total: {st['summary']['total']}")
 
+        # Test 4d: bypass mechanic (apf-qzc)
+        print("\n=== Test 4d: bypass — inline !raw + session whitelist ===")
+        # Sub-test 1: inline marker passes a value through untokenised
+        fake.next_response = {
+            "id": "msg_bp", "type": "message", "role": "assistant",
+            "content": [{"type": "text", "text": "ok"}],
+            "model": "claude-test", "stop_reason": "end_turn",
+        }
+        client.post(
+            "/v1/messages",
+            json={
+                "model": "claude-opus-4-7", "max_tokens": 256,
+                "messages": [{"role": "user", "content": [
+                    {"type": "text", "text":
+                     "ping !raw public-alias@example.com and tokenise "
+                     "secret@example.com please"}]}]
+            },
+            headers={"x-api-key": "test-key", "x-apf-session": "session-BP"},
+        )
+        out_bp = fake.last_request_body["messages"][0]["content"][0]["text"]
+        if "public-alias@example.com" not in out_bp:
+            print(f"FAIL  inline !raw value did not pass through: {out_bp!r}")
+            sys.exit(1)
+        if "secret@example.com" in out_bp:
+            print(f"FAIL  non-whitelisted value leaked: {out_bp!r}")
+            sys.exit(1)
+        if "!raw" in out_bp:
+            print(f"FAIL  marker '!raw' was not stripped: {out_bp!r}")
+            sys.exit(1)
+        print(f"  ok    inline !raw: pass-through value + tokenise rest")
+        print(f"        upstream saw: {out_bp!r}")
+
+        # Sub-test 2: whitelist endpoint sets persistent bypass
+        w = client.post(
+            "/v1/sessions/session-WL/whitelist",
+            json={"values": ["my-public-handle", "openly-known-email@me.de"]},
+        )
+        if w.json().get("added") != 2:
+            print(f"FAIL  /whitelist did not add 2 values: {w.json()!r}")
+            sys.exit(1)
+        client.post(
+            "/v1/messages",
+            json={
+                "model": "claude-opus-4-7", "max_tokens": 256,
+                "messages": [{"role": "user", "content": [
+                    {"type": "text", "text":
+                     "From my-public-handle to openly-known-email@me.de about "
+                     "the meeting with thomas.weber@example.de."}]}]
+            },
+            headers={"x-api-key": "test-key", "x-apf-session": "session-WL"},
+        )
+        out_wl = fake.last_request_body["messages"][0]["content"][0]["text"]
+        # Whitelisted values must survive…
+        for keep in ("openly-known-email@me.de",):
+            if keep not in out_wl:
+                print(f"FAIL  whitelisted value tokenised: {keep!r} missing from {out_wl!r}")
+                sys.exit(1)
+        # …non-whitelisted PII must still be tokenised
+        if "thomas.weber@example.de" in out_wl:
+            print(f"FAIL  non-whitelisted email leaked: {out_wl!r}")
+            sys.exit(1)
+        print(f"  ok    session whitelist: persistent pass-through")
+        print(f"        upstream saw: {out_wl!r}")
+
         # Test 4: secrets stay opaque
         print("\n=== Test 4: Tier-C secrets stay opaque to the upstream ===")
         fake.next_response = {

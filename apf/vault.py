@@ -63,7 +63,22 @@ class Vault:
         self._by_token: dict[str, VaultEntry] = {}
         # single session-global counter for Tier A/B opaque tokens
         self._sensitive_counter: int = 0
+        # User-declared bypass values (per apf-qzc). Spans matching any of
+        # these are NOT tokenised — the original passes through to the LLM.
+        # Populated by inline `!raw VALUE` markers and the
+        # POST /v1/sessions/{id}/whitelist endpoint.
+        self._whitelist: set[str] = set()
         self._lock = Lock()
+
+    def add_whitelist(self, value: str) -> None:
+        with self._lock:
+            self._whitelist.add(value)
+
+    def is_whitelisted(self, value: str) -> bool:
+        return value in self._whitelist
+
+    def whitelist_size(self) -> int:
+        return len(self._whitelist)
 
     def get_or_mint(self, original: str, label: str, tier: str,
                     confidence: float = 1.0,

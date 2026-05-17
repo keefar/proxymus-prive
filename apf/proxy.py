@@ -38,7 +38,9 @@ Limitations of this PoC
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -72,14 +74,40 @@ def _get_or_create_vault(session_id: str | None) -> tuple[str, Vault]:
     return session_id, _VAULTS[session_id]
 
 
+_INLINE_BYPASS_RE = re.compile(r'!raw\s+(?:"([^"]+)"|(\S+))')
+
+
+def _extract_inline_bypass(text: str, vault: Vault) -> str:
+    """Strip `!raw VALUE` markers from the user's text and add VALUE to the
+    session whitelist (apf-qzc). Two forms accepted:
+
+    - `!raw foo@example.com`       — single whitespace-delimited token
+    - `!raw "John Smith"`          — quoted multi-word value (for names,
+                                     addresses with spaces, etc.)
+
+    Once whitelisted, the value passes through detection+tokenisation
+    unmodified for the rest of the session. Use the
+    /v1/sessions/{id}/whitelist endpoint for bulk additions.
+    """
+    if "!raw" not in text:
+        return text
+    def _consume(m: re.Match[str]) -> str:
+        # Quoted form group 1 wins if present, else bare token group 2.
+        value = m.group(1) if m.group(1) is not None else m.group(2)
+        vault.add_whitelist(value)
+        return value
+    return _INLINE_BYPASS_RE.sub(_consume, text)
+
+
 def _tokenise_text(text: str, vault: Vault) -> str:
     if not text or not _DETECTOR:
         return text
-    detected = _DETECTOR.detect(text)
+    cleaned = _extract_inline_bypass(text, vault)
+    detected = _DETECTOR.detect(cleaned)
     spans = [Span(start=s.start, end=s.end, label=s.label, tier=s.tier,
                   confidence=getattr(s, "confidence", 1.0))
              for s in detected]
-    return tokenize_text(text, spans, vault)
+    return tokenize_text(cleaned, spans, vault)
 
 
 def _tokenise_block(block: Any, vault: Vault) -> Any:
@@ -191,6 +219,35 @@ async def health() -> dict:
         "active_sessions": len(_VAULTS),
         "upstream": ANTHROPIC_UPSTREAM,
     }
+
+
+@app.post("/v1/sessions/{session_id}/whitelist")
+async def add_whitelist(session_id: str, request: Request) -> dict:
+    """Add user-declared bypass values to the session whitelist (apf-qzc).
+
+    Body: {"values": ["alice@example.com", "MyPseudonym", ...]}
+
+    Values added here pass through detection+tokenisation untouched for
+    the rest of the session. Use for values the user knows are safe to
+    forward raw (their own pseudonyms, already-public addresses, test
+    fixture values). Inline `!raw VALUE` in the message text does the same
+    thing for one-off cases.
+    """
+    body = await request.json()
+    values = body.get("values") or []
+    if not isinstance(values, list):
+        return Response(  # type: ignore[return-value]
+            content=json.dumps({"error": "values must be a list"}),
+            status_code=400, media_type="application/json",
+        )
+    _, vault = _get_or_create_vault(session_id)
+    added = 0
+    for v in values:
+        if isinstance(v, str) and v.strip():
+            vault.add_whitelist(v)
+            added += 1
+    return {"session_id": session_id, "added": added,
+            "total_whitelist": vault.whitelist_size()}
 
 
 @app.get("/v1/sessions/{session_id}/status")

@@ -44,15 +44,22 @@ def _dedupe_spans(spans: list[Span]) -> list[Span]:
 
 def tokenize_text(text: str, spans: list[Span], vault: Vault) -> str:
     """Replace each span's substring with its vault token. Returns the
-    tokenized text. Mutates the vault."""
+    tokenized text. Mutates the vault.
+
+    Spans whose substring matches a user-declared bypass value
+    (vault._whitelist, populated via inline `!raw` markers or the
+    /v1/sessions/{id}/whitelist endpoint) are passed through unmodified.
+    """
     cleaned = _dedupe_spans(spans)
-    # Sanity: spans within text bounds.
     pieces: list[str] = []
     cursor = 0
     for span in cleaned:
         if span.end <= span.start or span.start < 0 or span.end > len(text):
             continue
         original = text[span.start:span.end]
+        if vault.is_whitelisted(original):
+            # User explicitly opted this value out — let it through raw.
+            continue
         entry = vault.get_or_mint(original, span.label, span.tier,
                                   confidence=span.confidence,
                                   secret_key_name=span.context_key,
