@@ -19,6 +19,9 @@ models/
 
 # Benchmarking outputs
 benchmarks/results/
+# Over-filter evaluation outputs — judge rationales may quote fixture
+# content; keep them local even though the fixtures themselves are synthetic.
+docs/results/
 # Note: fixtures/*.jsonl IS committed (synthetic, see docs/MODELS.md).
 # Beads' .beads/issues.jsonl is a passive export; DB is source of truth.
 .beads/issues.jsonl
