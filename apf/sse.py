@@ -1,7 +1,7 @@
 """SSE rewriter for Anthropic Messages API streaming responses.
 
-The challenge: tokens like `<EMAIL_1>` may straddle SSE chunk boundaries
-(`<EMAI` in one chunk, `L_1>` in the next). Detokenising each chunk
+The challenge: tokens like `<SENSITIVE_1>` may straddle SSE chunk boundaries
+(`<SENSI` in one chunk, `TIVE_1>` in the next). Detokenising each chunk
 independently would corrupt them. Solution: a small per-content-block
 text buffer that holds back any partial-token tail.
 

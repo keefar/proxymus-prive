@@ -1,11 +1,15 @@
 """Session-scoped vault mapping original PII values to opaque tokens.
 
-Token shape decisions
----------------------
-- Tier A and B: `<{LABEL}_{N}>` where N is a per-label counter incremented on
-  first sight in the session. Same original value → same token (stable within
-  the session). LLM sees these tokens and may reference them in its output
-  and tool calls.
+Token shape decisions (per docs/THREAT-MODEL-PRIVATE.md §5.1)
+-------------------------------------------------------------
+- Tier A and B: `<SENSITIVE_{N}>` where N is a single session-global counter.
+  All categories share the same opaque surface so the LLM cannot deduce
+  what kind of thing the placeholder represents (no <MEDICATION_1> /
+  <DIAGNOSIS_2> distinction to cascade-leak the original value via context
+  inference). Same original value → same token (stable within session).
+  The internal `label` and `third_party` attributes survive on the entry
+  for evaluation, audit, and out-of-band metadata channels — they're just
+  not exposed in the surface token name.
 - Tier C (secrets): always `<SECRET>` — opaque, no type, no number. The LLM
   must not gain any information about what kind of secret it is. When a tool
   needs the real value, the local executor pulls it from environment /
@@ -13,6 +17,14 @@ Token shape decisions
   *auditing* and for the rare case where the executor genuinely needs the
   original (e.g. password copy-paste), but the surface API for the LLM only
   ever exposes `<SECRET>`.
+
+Third-party flag (per §5.2)
+---------------------------
+Entries carry an orthogonal `third_party` attribute when the original value
+identifies someone other than the user (a friend, family member, colleague).
+This does NOT change the surface token — all sensitive values are equally
+opaque — but it is preserved for audit and for future cumulative-profile
+warnings that should weight third-party leakage separately.
 
 Determinism
 -----------
@@ -33,6 +45,7 @@ class VaultEntry:
     label: str
     tier: str
     confidence: float = 1.0  # min over all detections that produced this entry
+    third_party: bool = False
     # For Tier-C entries detected via a KEY=VALUE pattern: the KEY name.
     # The secret resolver can look this up in env/Keychain at tool-call time
     # so the real secret is supplied by the local store, not the vault.
@@ -48,13 +61,14 @@ class Vault:
         self._by_original: dict[str, VaultEntry] = {}
         # token → entry (for fast reverse lookup)
         self._by_token: dict[str, VaultEntry] = {}
-        # per-label counter
-        self._counters: dict[str, int] = {}
+        # single session-global counter for Tier A/B opaque tokens
+        self._sensitive_counter: int = 0
         self._lock = Lock()
 
     def get_or_mint(self, original: str, label: str, tier: str,
                     confidence: float = 1.0,
-                    secret_key_name: str | None = None) -> VaultEntry:
+                    secret_key_name: str | None = None,
+                    third_party: bool = False) -> VaultEntry:
         """Return an existing entry for this value or mint a new one.
 
         If the value has been seen before, the entry's `confidence` is
@@ -62,6 +76,9 @@ class Vault:
         any detection of this string was uncertain, the entry stays flagged
         as uncertain. (A single high-confidence detection should not
         override an earlier low-confidence one.)
+
+        The internal `label` is preserved on the entry but does NOT appear
+        in the surface token — see module docstring §5.1.
         """
         with self._lock:
             entry = self._by_original.get(original)
@@ -71,6 +88,8 @@ class Vault:
                         token=entry.token, original=entry.original,
                         label=entry.label, tier=entry.tier,
                         confidence=confidence,
+                        third_party=entry.third_party,
+                        secret_key_name=entry.secret_key_name,
                     )
                     self._by_original[original] = entry
                     # Refresh by_token map
@@ -84,16 +103,17 @@ class Vault:
                 entry = VaultEntry(token=token, original=original,
                                    label=label, tier=tier,
                                    confidence=confidence,
+                                   third_party=third_party,
                                    secret_key_name=secret_key_name)
                 self._by_original[original] = entry
                 self._by_token[internal_token] = entry
             else:
-                n = self._counters.get(label, 0) + 1
-                self._counters[label] = n
-                token = f"<{label}_{n}>"
+                self._sensitive_counter += 1
+                token = f"<SENSITIVE_{self._sensitive_counter}>"
                 entry = VaultEntry(token=token, original=original,
                                    label=label, tier=tier,
-                                   confidence=confidence)
+                                   confidence=confidence,
+                                   third_party=third_party)
                 self._by_original[original] = entry
                 self._by_token[token] = entry
             return entry

@@ -54,20 +54,23 @@ def test_text_token_straddle() -> None:
     print("\n=== Test 1: token straddles chunk boundary ===")
     vault = Vault()
     e = vault.get_or_mint("anna@example.de", "EMAIL", "A")
-    # e.token should be "<EMAIL_1>"
+    # e.token is "<SENSITIVE_1>" under the opaque-default scheme.
     rew = SSERewriter(vault)
 
-    # Simulate upstream stream: "Send to <EMAI" then "L_1> at 3pm."
+    # Simulate upstream stream that splits e.token across two text deltas.
+    split_at = len(e.token) // 2
+    chunk_a = "Send to " + e.token[:split_at]
+    chunk_b = e.token[split_at:] + " at 3pm."
     out = []
     out.extend(rew.feed("content_block_start",
                         {"type": "content_block_start", "index": 0,
                          "content_block": {"type": "text", "text": ""}}))
     out.extend(rew.feed("content_block_delta",
                         {"type": "content_block_delta", "index": 0,
-                         "delta": {"type": "text_delta", "text": "Send to <EMAI"}}))
+                         "delta": {"type": "text_delta", "text": chunk_a}}))
     out.extend(rew.feed("content_block_delta",
                         {"type": "content_block_delta", "index": 0,
-                         "delta": {"type": "text_delta", "text": "L_1> at 3pm."}}))
+                         "delta": {"type": "text_delta", "text": chunk_b}}))
     out.extend(rew.feed("content_block_stop",
                         {"type": "content_block_stop", "index": 0}))
     out.extend(rew.flush())

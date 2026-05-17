@@ -1,7 +1,7 @@
 """Tool-call boundary resolver.
 
-When the LLM produces a tool call (e.g. `send_email(to="<EMAIL_3>")` or
-`Bash(command="grep -r '<EMAIL_3>' /Users/<USER_PATH_1>/inbox")`), the local
+When the LLM produces a tool call (e.g. `send_email(to="<SENSITIVE_3>")` or
+`Bash(command="grep -r '<SENSITIVE_3>' /Users/<SENSITIVE_1>/inbox")`), the local
 tool executor needs the *real* values to do real work. The resolver walks
 the tool-call arguments (JSON-shaped) and substitutes vault tokens with
 their originals.

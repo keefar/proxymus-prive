@@ -87,19 +87,21 @@ def main() -> int:
     install_fake_upstream(fake)
 
     with TestClient(proxy.app) as client:
-        # Test 1: outbound tokenisation
+        # Test 1: round-trip. Two-phase, because under the opaque-default
+        # scheme (THREAT-MODEL-PRIVATE.md §5.1) the fake upstream cannot
+        # know which <SENSITIVE_N> indices will be minted without having
+        # seen the request first. Phase A populates the vault; phase B
+        # crafts a response referencing the real vault tokens and verifies
+        # full detokenisation.
+        print("\n=== Test 1: round-trip ===")
+
+        # Phase A: stub fake, run a request to populate session-A vault.
         fake.next_response = {
-            "id": "msg_1",
-            "type": "message",
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "Hi <PERSON_1>, see you on <DATE_1>."},
-                {"type": "tool_use", "id": "tu_1", "name": "send_email",
-                 "input": {"to": "<EMAIL_1>", "subject": "Hello"}},
-            ],
-            "model": "claude-test", "stop_reason": "tool_use",
+            "id": "msg_warmup", "type": "message", "role": "assistant",
+            "content": [{"type": "text", "text": "(warm)"}],
+            "model": "claude-test", "stop_reason": "end_turn",
         }
-        resp = client.post(
+        warmup = client.post(
             "/v1/messages",
             json={
                 "model": "claude-opus-4-7",
@@ -113,9 +115,7 @@ def main() -> int:
             },
             headers={"x-api-key": "test-key", "x-apf-session": "session-A"},
         )
-
-        print("\n=== Test 1: round-trip ===")
-        assert_eq(resp.status_code, 200, "status 200")
+        assert_eq(warmup.status_code, 200, "warmup status 200")
 
         # The upstream should have seen tokens, not the raw PII.
         out_body = fake.last_request_body
@@ -124,26 +124,60 @@ def main() -> int:
             print("FAIL  upstream still saw the raw email")
             print(f"  body: {out_text!r}")
             sys.exit(1)
-        if "<EMAIL_" not in out_text and "<PERSON_" not in out_text:
-            print("FAIL  upstream body has no tokens — detection or tokenisation broken")
+        if "<SENSITIVE_" not in out_text:
+            print("FAIL  upstream body has no opaque tokens — detection or tokenisation broken")
             print(f"  body: {out_text!r}")
             sys.exit(1)
         print(f"  ok    upstream saw tokenised text:")
         print(f"        {out_text!r}")
 
-        # The client response should have detokenised text and resolved tool_use.
+        # Phase B: build a fake response referencing the actual vault tokens
+        # and verify that text + tool_use both detokenise back to originals.
+        vault = proxy._VAULTS["session-A"]
+        by_orig = {e.original: e for e in vault.all_entries()}
+        anna = by_orig["Anna"].token
+        email = by_orig["thomas.weber@example.de"].token
+        freitag = by_orig["Freitag"].token
+
+        fake.next_response = {
+            "id": "msg_1", "type": "message", "role": "assistant",
+            "content": [
+                {"type": "text", "text": f"Hi {anna}, see you on {freitag}."},
+                {"type": "tool_use", "id": "tu_1", "name": "send_email",
+                 "input": {"to": email, "subject": "Hello"}},
+            ],
+            "model": "claude-test", "stop_reason": "tool_use",
+        }
+        resp = client.post(
+            "/v1/messages",
+            json={
+                "model": "claude-opus-4-7", "max_tokens": 256,
+                "messages": [
+                    {"role": "user", "content": [
+                        {"type": "text", "text":
+                         "Erinnere Anna an die Akte für thomas.weber@example.de zum Freitag."},
+                    ]},
+                ],
+            },
+            headers={"x-api-key": "test-key", "x-apf-session": "session-A"},
+        )
+        assert_eq(resp.status_code, 200, "round-trip status 200")
+
         client_body = resp.json()
         assistant_text = client_body["content"][0]["text"]
-        if "<PERSON_" in assistant_text or "<DATE_" in assistant_text:
-            print("FAIL  client response still contained tokens")
+        if "<SENSITIVE_" in assistant_text:
+            print("FAIL  client response still contained opaque tokens")
             print(f"  text: {assistant_text!r}")
+            sys.exit(1)
+        if "Anna" not in assistant_text or "Freitag" not in assistant_text:
+            print(f"FAIL  client response did not restore originals: {assistant_text!r}")
             sys.exit(1)
         print(f"  ok    client saw detokenised response:")
         print(f"        {assistant_text!r}")
 
         tool_input = client_body["content"][1]["input"]
-        if "<EMAIL_" in tool_input.get("to", ""):
-            print("FAIL  tool_use.input still contained tokens")
+        if "<SENSITIVE_" in tool_input.get("to", ""):
+            print("FAIL  tool_use.input still contained opaque tokens")
             sys.exit(1)
         if tool_input.get("to") != "thomas.weber@example.de":
             print(f"FAIL  tool_use.input.to mismatch: {tool_input!r}")

@@ -21,7 +21,7 @@ Flow (non-streaming PoC):
 Session model
 -------------
 The proxy is stateless across turns *within* a process — every request
-carries the full conversation history. Token IDs (`<EMAIL_3>`) must stay
+carries the full conversation history. Token IDs (`<SENSITIVE_3>`) must stay
 stable within a conversation. We key the vault by the `x-apf-session`
 header (client-supplied UUID); fall back to per-request session when the
 header is absent.
