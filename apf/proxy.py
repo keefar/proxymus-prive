@@ -53,6 +53,12 @@ from .audit_log import LOG as _AUDIT_LOG, enabled as _audit_enabled
 from .detokenizer import detokenize_text
 from .endpoint_policy import POLICY_OFF, policy_for_url
 from .local_only import categories_in, refusal_body
+from .openai_shape import (
+    OpenAISSERewriter,
+    detokenise_response as oai_detokenise_response,
+    scan_request_for_locked as oai_scan_for_locked,
+    tokenise_request as oai_tokenise_request,
+)
 from .resolver import resolve_tool_call_args
 from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
@@ -62,11 +68,18 @@ from .vault import Vault
 ANTHROPIC_UPSTREAM = os.environ.get(
     "APF_UPSTREAM_BASE", "https://api.anthropic.com"
 )
+# Per apf-fwt user clarification 2026-05-17: the OpenAI path is OpenAI-
+# *compatible* (not OpenAI-specific). The user configures whichever
+# OAI-compatible upstream they want (api.openai.com, localhost:11434
+# for Ollama, api.groq.com, api.together.ai, LM Studio, oMLX, etc.).
+# Default empty — operator must opt in by setting it.
+OPENAI_UPSTREAM = os.environ.get("APF_OPENAI_UPSTREAM", "")
+
 # Cached at module load so policy decisions don't hit disk per request.
-# Edits to user config require a proxy restart to take effect for the
-# default upstream (matches the env-var semantics; per-request override
-# would be added in apf-fwt's multi-endpoint work).
 _UPSTREAM_POLICY = policy_for_url(ANTHROPIC_UPSTREAM)
+_OPENAI_UPSTREAM_POLICY = (
+    policy_for_url(OPENAI_UPSTREAM) if OPENAI_UPSTREAM else POLICY_OFF
+)
 PROXY_PORT = int(os.environ.get("APF_PORT", "8765"))
 
 # Per-session vaults. In production: bounded LRU with eviction; for PoC, dict.
@@ -529,6 +542,148 @@ async def _stream_messages(
 
     # Request-side tokenisation is complete; summary headers are stable from
     # here on (LLM output doesn't add new vault entries, only references them).
+    headers = _build_response_headers(session_id, vault)
+    headers["cache-control"] = "no-cache"
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(
+    request: Request,
+    x_apf_session: str | None = Header(default=None),
+) -> Response:
+    """OpenAI-compatible Chat Completions endpoint (apf-fwt).
+
+    Forwards to whatever upstream URL the operator has configured via
+    APF_OPENAI_UPSTREAM — that covers api.openai.com, Ollama on
+    localhost, LM Studio, vLLM, Groq, Together, Mistral, OpenRouter,
+    Cerebras, SambaNova, oMLX, mlx-lm and anything else that speaks
+    OAI-compatible. Same per-session vault, same locked-category
+    refusal, same audit and feedback headers as /v1/messages.
+
+    Auth headers (Authorization, OpenAI-Organization, etc.) are passed
+    through from the client request unchanged — the proxy itself never
+    holds credentials.
+    """
+    if not OPENAI_UPSTREAM:
+        return JSONResponse(
+            content={
+                "error": {
+                    "type": "apf_upstream_not_configured",
+                    "message": (
+                        "Set APF_OPENAI_UPSTREAM to the base URL of any "
+                        "OpenAI-compatible endpoint (e.g. http://localhost:11434 "
+                        "for Ollama, https://api.openai.com, https://api.groq.com)."
+                    ),
+                }
+            },
+            status_code=503,
+        )
+    inbound = await request.json()
+    session_id, vault = _get_or_create_vault(x_apf_session)
+
+    # Locked-category refusal (apf-enr) on the OpenAI shape — same logic,
+    # different walker. Skipped when policy=off (trusted local upstream).
+    if _OPENAI_UPSTREAM_POLICY != POLICY_OFF:
+        locked = oai_scan_for_locked(inbound, _scan_text_for_locked)
+        if locked:
+            return JSONResponse(
+                content=refusal_body(locked),
+                status_code=422,
+                headers={"x-apf-session": session_id,
+                         "x-apf-locked-categories": ",".join(locked)},
+            )
+
+    if _OPENAI_UPSTREAM_POLICY == POLICY_OFF:
+        tokenised = inbound
+    else:
+        tokenised = oai_tokenise_request(inbound, vault, _tokenise_text)
+        if _audit_enabled():
+            _AUDIT_LOG.record(session_id, vault.summary())
+
+    # Forward auth + organisation headers as the client sent them.
+    upstream_headers = {"content-type": "application/json"}
+    for h in ("authorization", "openai-organization", "openai-project"):
+        v = request.headers.get(h)
+        if v:
+            upstream_headers[h] = v
+
+    if tokenised.get("stream") is True:
+        return await _stream_chat_completions(
+            session_id, vault, tokenised, upstream_headers
+        )
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        upstream = await client.post(
+            f"{OPENAI_UPSTREAM}/v1/chat/completions",
+            json=tokenised,
+            headers=upstream_headers,
+        )
+        upstream_body = upstream.json() if upstream.headers.get(
+            "content-type", "").startswith("application/json") else None
+
+    if upstream_body is None:
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            headers={"x-apf-session": session_id, **{
+                k: v for k, v in upstream.headers.items()
+                if k.lower() not in ("content-length", "content-encoding")
+            }},
+        )
+    rewritten = oai_detokenise_response(
+        upstream_body, vault, _make_secret_resolver(vault)
+    )
+    response_headers = _build_response_headers(session_id, vault)
+    return JSONResponse(
+        content=rewritten,
+        status_code=upstream.status_code,
+        headers=response_headers,
+    )
+
+
+async def _stream_chat_completions(
+    session_id: str, vault: Vault, tokenised_body: dict, upstream_headers: dict,
+) -> StreamingResponse:
+    """OpenAI streaming relay. Reads data-only SSE chunks from upstream
+    and runs them through OpenAISSERewriter."""
+    rewriter = OpenAISSERewriter(
+        vault, secret_resolver=_make_secret_resolver(vault),
+    )
+
+    async def generate():
+        buffer = ""
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream(
+                "POST",
+                f"{OPENAI_UPSTREAM}/v1/chat/completions",
+                json=tokenised_body,
+                headers=upstream_headers,
+            ) as upstream:
+                async for chunk in upstream.aiter_text():
+                    buffer += chunk
+                    while True:
+                        # OpenAI SSE is data-only chunks separated by \n\n.
+                        # Each chunk starts with "data: " then a JSON
+                        # payload (or [DONE]).
+                        delim = buffer.find("\n\n")
+                        if delim < 0:
+                            break
+                        chunk_text, buffer = buffer[:delim], buffer[delim+2:]
+                        for line in chunk_text.split("\n"):
+                            line = line.strip()
+                            if not line.startswith("data:"):
+                                continue
+                            payload = line[len("data:"):].strip()
+                            for out_chunk in rewriter.feed(payload):
+                                yield out_chunk.encode("utf-8")
+        for out_chunk in rewriter.flush():
+            yield out_chunk.encode("utf-8")
+
     headers = _build_response_headers(session_id, vault)
     headers["cache-control"] = "no-cache"
     return StreamingResponse(

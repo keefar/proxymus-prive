@@ -20,8 +20,10 @@ import json
 import os
 import sys
 
-# Pre-flight: set a dummy upstream so the lifespan handler still imports cleanly.
+# Pre-flight: set dummy upstreams so the lifespan handler imports cleanly
+# and the apf-fwt OpenAI path is enabled for Test 5.
 os.environ.setdefault("APF_UPSTREAM_BASE", "http://mock-upstream.invalid")
+os.environ.setdefault("APF_OPENAI_UPSTREAM", "http://mock-openai-upstream.invalid")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -502,6 +504,95 @@ def main() -> int:
             sys.exit(1)
         print(f"  ok    secrets opaque to upstream:")
         print(f"        {out_secret!r}")
+
+        # Test 5: OpenAI Chat Completions endpoint (apf-fwt)
+        print("\n=== Test 5: OpenAI chat completions roundtrip ===")
+        # Phase A: warmup populates vault
+        fake.next_response = {
+            "id": "chatcmpl-warmup",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "(warm)"},
+                "finish_reason": "stop",
+            }],
+            "model": "gpt-test",
+        }
+        warmup_oai = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-test",
+                "messages": [
+                    {"role": "system", "content": "You are an assistant."},
+                    {"role": "user",
+                     "content": "Hi Anna, send the report to thomas.weber@example.de"},
+                ],
+            },
+            headers={"authorization": "Bearer test-key",
+                     "x-apf-session": "oai-session-A"},
+        )
+        assert_eq(warmup_oai.status_code, 200, "OpenAI warmup status 200")
+        out_body_oai = fake.last_request_body
+        user_text = out_body_oai["messages"][1]["content"]
+        if "thomas.weber@example.de" in user_text:
+            print(f"FAIL  raw email reached upstream: {user_text!r}")
+            sys.exit(1)
+        if "<SENSITIVE_" not in user_text:
+            print(f"FAIL  no opaque tokens in upstream body: {user_text!r}")
+            sys.exit(1)
+        print(f"  ok    OpenAI upstream saw tokenised: {user_text!r}")
+
+        # Phase B: response detokenises
+        vault_oai = proxy._VAULTS["oai-session-A"]
+        by_orig = {e.original: e for e in vault_oai.all_entries()}
+        anna_t = by_orig["Anna"].token
+        email_t = by_orig["thomas.weber@example.de"].token
+        fake.next_response = {
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": f"OK, I'll send to {email_t}.",
+                    "tool_calls": [{
+                        "id": "call_xyz",
+                        "type": "function",
+                        "function": {
+                            "name": "send_email",
+                            "arguments": json.dumps({
+                                "to": email_t, "name": anna_t,
+                                "subject": "Report",
+                            }),
+                        },
+                    }],
+                },
+                "finish_reason": "tool_calls",
+            }],
+            "model": "gpt-test",
+        }
+        resp_oai = client.post(
+            "/v1/chat/completions",
+            json={"model": "gpt-test",
+                  "messages": [{"role": "user",
+                               "content": "Resend to Anna at "
+                                          "thomas.weber@example.de"}]},
+            headers={"authorization": "Bearer test-key",
+                     "x-apf-session": "oai-session-A"},
+        )
+        assert_eq(resp_oai.status_code, 200, "OpenAI roundtrip status 200")
+        oai_msg = resp_oai.json()["choices"][0]["message"]
+        if "<SENSITIVE_" in oai_msg["content"]:
+            print(f"FAIL  client text not detokenised: {oai_msg['content']!r}")
+            sys.exit(1)
+        if "thomas.weber@example.de" not in oai_msg["content"]:
+            print(f"FAIL  email not restored in text: {oai_msg['content']!r}")
+            sys.exit(1)
+        tc_args = json.loads(oai_msg["tool_calls"][0]["function"]["arguments"])
+        if tc_args["to"] != "thomas.weber@example.de" or tc_args["name"] != "Anna":
+            print(f"FAIL  tool_call arguments not resolved: {tc_args!r}")
+            sys.exit(1)
+        print(f"  ok    OpenAI client saw detokenised text + resolved tool_call")
 
     print("\nALL TESTS PASSED")
     return 0
