@@ -49,6 +49,7 @@ import httpx
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from .audit_log import LOG as _AUDIT_LOG, enabled as _audit_enabled
 from .detokenizer import detokenize_text
 from .endpoint_policy import POLICY_OFF, policy_for_url
 from .local_only import categories_in, refusal_body
@@ -276,6 +277,17 @@ async def health() -> dict:
     }
 
 
+@app.get("/v1/sessions/{session_id}/audit")
+async def session_audit(session_id: str) -> dict:
+    """Return audit entries for a session. Empty unless APF_AUDIT_LOG=1
+    was set when the entries were recorded. See apf/audit_log.py for
+    the deliberately limited shape (counts only, never values)."""
+    if not _audit_enabled():
+        return {"session_id": session_id, "enabled": False, "entries": []}
+    return {"session_id": session_id, "enabled": True,
+            "entries": _AUDIT_LOG.entries_for(session_id)}
+
+
 @app.post("/v1/sessions/{session_id}/whitelist")
 async def add_whitelist(session_id: str, request: Request) -> dict:
     """Add user-declared bypass values to the session whitelist (apf-qzc).
@@ -391,6 +403,10 @@ async def messages(
         tokenised = inbound
     else:
         tokenised = _tokenise_request_body(inbound, vault)
+        # Per apf-ive: record category counts to the audit log (off unless
+        # APF_AUDIT_LOG=1). Counts only, never values; safe to surface.
+        if _audit_enabled():
+            _AUDIT_LOG.record(session_id, vault.summary())
 
     # Forward to Anthropic. We pass through Authorization/x-api-key from the
     # caller. The proxy itself doesn't hold an API key.

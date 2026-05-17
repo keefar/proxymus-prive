@@ -424,6 +424,54 @@ def main() -> int:
             else:
                 os.environ["APF_LOCKED_LABELS"] = old_locked
 
+        # Test 4f: audit log off-by-default + opt-in (apf-ive)
+        print("\n=== Test 4f: audit log scaffold (off default, opt-in) ===")
+        # Default (env not set): /audit reports disabled
+        a = client.get("/v1/sessions/session-A/audit")
+        if a.json().get("enabled") is not False:
+            print(f"FAIL  audit log enabled by default: {a.json()!r}")
+            sys.exit(1)
+        if a.json().get("entries"):
+            print(f"FAIL  audit log had entries while disabled: {a.json()!r}")
+            sys.exit(1)
+        print(f"  ok    audit log disabled by default")
+        # Turn it on, send a request, expect an entry
+        os.environ["APF_AUDIT_LOG"] = "1"
+        try:
+            fake.next_response = {
+                "id": "msg_au", "type": "message", "role": "assistant",
+                "content": [{"type": "text", "text": "ok"}],
+                "model": "claude-test", "stop_reason": "end_turn",
+            }
+            client.post(
+                "/v1/messages",
+                json={
+                    "model": "claude-opus-4-7", "max_tokens": 256,
+                    "messages": [{"role": "user", "content": [
+                        {"type": "text", "text":
+                         "Mail an audit-test@example.com schicken"}]}]
+                },
+                headers={"x-api-key": "test-key", "x-apf-session": "session-AU"},
+            )
+            a2 = client.get("/v1/sessions/session-AU/audit")
+            entries = a2.json().get("entries", [])
+            if not entries:
+                print(f"FAIL  audit log empty after request: {a2.json()!r}")
+                sys.exit(1)
+            entry = entries[-1]
+            if "summary" not in entry or entry["summary"]["total"] < 1:
+                print(f"FAIL  audit entry shape wrong: {entry!r}")
+                sys.exit(1)
+            # Critical: NO original value must appear in any entry
+            entries_json = json.dumps(entries)
+            if "audit-test@example.com" in entries_json:
+                print(f"FAIL  audit log leaked original value: {entries_json!r}")
+                sys.exit(1)
+            print(f"  ok    audit entry recorded; values never stored")
+            print(f"        summary: {entry['summary']}")
+        finally:
+            del os.environ["APF_AUDIT_LOG"]
+
         # Test 4: secrets stay opaque
         print("\n=== Test 4: Tier-C secrets stay opaque to the upstream ===")
         fake.next_response = {
