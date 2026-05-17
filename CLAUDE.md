@@ -15,13 +15,16 @@ a model benchmark — see `docs/MODELS.md`.
 ## Where to look first
 
 1. **`README.md`** — vision, scope, non-goals
-2. **`docs/sessions/`** — chronological session logs; latest one is always the best entry
+2. **`docs/MODEL-EVALUATION.md`** — current dossier on the detector-model evaluation,
+   recommended engine, tradeoffs, and what's still worth tuning. **Start here for the
+   "where are we with the model layer" question.**
+3. **`docs/sessions/`** — chronological session logs; latest one is always the best entry
    point for "what was decided and why"
-3. **`docs/research/EXISTING-SOLUTIONS.md`** — survey of similar projects, capability matrix,
+4. **`docs/research/EXISTING-SOLUTIONS.md`** — survey of similar projects, capability matrix,
    identifies the actual gap this project addresses
-4. **`docs/research/RESEARCH-NOTES.md`** — consolidated technical findings
-5. **`docs/MODELS.md`** — candidate models + benchmark plan
-6. **`docs/ARCHITECTURE.md`** — design options, open questions, decision log
+5. **`docs/research/RESEARCH-NOTES.md`** — consolidated technical findings
+6. **`docs/MODELS.md`** — candidate models + benchmark plan
+7. **`docs/ARCHITECTURE.md`** — design options, open questions, decision log
 
 ## Hard rules
 

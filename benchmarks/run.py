@@ -27,6 +27,13 @@ try:
 except ImportError:
     pass
 
+# Vendored DontFeedTheAI regex detector — only registers if submodule present.
+try:
+    from . import adapters_dfta as _dfta
+    _dfta.register(ADAPTERS)
+except ImportError:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_DIR = ROOT / "fixtures"
 RESULTS_DIR = ROOT / "benchmarks" / "results"

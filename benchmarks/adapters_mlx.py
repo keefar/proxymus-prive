@@ -794,6 +794,42 @@ class EnsembleMaxAdapter:
         return _merge_spans(groups)
 
 
+class EnsembleMaxPlusAdapter:
+    """ensemble-max plus the vendored DontFeedTheAI regex catalog (181 extra
+    patterns). Useful where pentest-shaped data (NTLM hashes, AD usernames,
+    additional vendor API-key prefixes) appears in input. Marginal cost
+    (~1 ms per call) over ensemble-max."""
+    name = "ensemble-max-plus"
+
+    def __init__(self) -> None:
+        self._detectors: list = []
+
+    def warmup(self) -> None:
+        from .adapters import RegexBaseline
+        regex = RegexBaseline()
+        presidio = PresidioAdapter()
+        gliner_multi = GlinerMultiPiiAdapter()
+        gliner_nvidia = GlinerNvidiaAdapter()
+        regex.warmup()
+        presidio.warmup()
+        gliner_multi.warmup()
+        gliner_nvidia.warmup()
+        self._detectors = [regex, presidio, gliner_multi, gliner_nvidia]
+        # Try to add vendored DFTA regex if submodule present.
+        try:
+            from . import adapters_dfta
+            if adapters_dfta._DFTA_AVAILABLE:
+                dfta = adapters_dfta.DftaRegexAdapter()
+                dfta.warmup()
+                self._detectors.append(dfta)
+        except ImportError:
+            pass
+
+    def detect(self, text: str) -> list[Span]:
+        groups = [d.detect(text) for d in self._detectors]
+        return _merge_spans(groups)
+
+
 class GlinerMultiPiiLowThresholdAdapter(_GlinerBase):
     """Same model, threshold 0.3 instead of 0.5 — buys recall, pays precision."""
     name = "gliner-multi-pii-v1-lo"
@@ -911,4 +947,5 @@ def register(adapters: dict) -> None:
     adapters["ensemble-fast"] = EnsembleFastAdapter
     adapters["ensemble-full"] = EnsembleFullAdapter
     adapters["ensemble-max"] = EnsembleMaxAdapter
+    adapters["ensemble-max-plus"] = EnsembleMaxPlusAdapter
     adapters["gliner-lo"] = GlinerMultiPiiLowThresholdAdapter
