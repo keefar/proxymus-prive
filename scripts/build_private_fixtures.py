@@ -32,12 +32,24 @@ class SpanSpec:
 
 
 @dataclass
+class Turn:
+    """One conversation turn in a multi-turn fixture (apf-h0j)."""
+    text: str
+    spans: list[SpanSpec]
+    role: str = "user"  # "user" or "assistant"
+
+
+@dataclass
 class Fixture:
     id: str
     lang: str
-    text: str
-    spans: list[SpanSpec]
     notes: str
+    # Single-turn fixtures use text+spans. Multi-turn fixtures use turns
+    # and leave text/spans empty. The build step distinguishes by which
+    # side is populated.
+    text: str = ""
+    spans: list[SpanSpec] = field(default_factory=list)
+    turns: list[Turn] = field(default_factory=list)
     bucket: str = "private"
     source: str = "synthetic"
 
@@ -378,6 +390,77 @@ FIXTURES: list[Fixture] = [
 
     # ── Substance use, prescribed ──────────────────────────────────────────
 
+    # ── Multi-turn: cumulative profile assembly (§3.3) ─────────────────────
+    Fixture(
+        id="de-profile-aggregation-01",
+        lang="de",
+        notes=(
+            "Multi-turn assistant chat across 5 days. Each turn introduces "
+            "one more low-individual-value identifier; cumulatively they "
+            "re-identify the user (postcode + employer + child's school + "
+            "weekly therapy time + partner name). Tests THREAT-MODEL §3.3 "
+            "cumulative profile assembly and §5.4 multi-stage warning."
+        ),
+        turns=[
+            Turn(
+                role="user",
+                text=(
+                    "Such mir bitte gute Sushi-Restaurants in der Nähe — "
+                    "ich wohne in 33602. Lieferung wäre ideal, sonst "
+                    "Selbstabholung mit dem Fahrrad."
+                ),
+                spans=[
+                    SpanSpec("POSTCODE", "33602"),
+                ],
+            ),
+            Turn(
+                role="user",
+                text=(
+                    "Ich brauche eine Vorlage für eine Krankmeldung an "
+                    "meinen Arbeitgeber Bertelsmann Stiftung — kurz, freundlich, "
+                    "ohne Diagnose-Angabe. Voraussichtlich zwei Tage Ausfall."
+                ),
+                spans=[
+                    SpanSpec("ORG", "Bertelsmann Stiftung"),
+                ],
+            ),
+            Turn(
+                role="user",
+                text=(
+                    "Trag bitte morgen 8:00 in den Kalender ein: "
+                    "Elternsprechtag Janosch-Klasse, Helmholtz-Gymnasium "
+                    "Bielefeld."
+                ),
+                spans=[
+                    SpanSpec("PERSON", "Janosch", third_party=True),
+                    SpanSpec("ORG", "Helmholtz-Gymnasium Bielefeld"),
+                ],
+            ),
+            Turn(
+                role="user",
+                text=(
+                    "Erinnerung für Donnerstag 17:30: Therapietermin. "
+                    "Frag mich am Vortag, ob ich die Wochenaufgabe gemacht habe."
+                ),
+                spans=[
+                    SpanSpec("DATE", "Donnerstag 17:30"),
+                    SpanSpec("APPOINTMENT_HEALTH", "Therapietermin"),
+                ],
+            ),
+            Turn(
+                role="user",
+                text=(
+                    "Schreib eine kurze Notiz an Sarina zu unserem "
+                    "Urlaubsantrag — sie soll ihre Eltern fragen, ob sie "
+                    "die Hunde nehmen würden."
+                ),
+                spans=[
+                    SpanSpec("PERSON", "Sarina", third_party=True),
+                ],
+            ),
+        ],
+    ),
+
     Fixture(
         id="de-substanz-rezept-01",
         lang="de",
@@ -436,15 +519,26 @@ def build_spans(text: str, specs: list[SpanSpec]) -> list[dict]:
 
 
 def to_jsonl_record(f: Fixture) -> dict:
-    return {
+    base = {
         "id": f.id,
         "lang": f.lang,
         "bucket": f.bucket,
         "source": f.source,
-        "text": f.text,
-        "spans": build_spans(f.text, f.spans),
         "notes": f.notes,
     }
+    if f.turns:
+        base["turns"] = [
+            {
+                "role": t.role,
+                "text": t.text,
+                "spans": build_spans(t.text, t.spans),
+            }
+            for t in f.turns
+        ]
+    else:
+        base["text"] = f.text
+        base["spans"] = build_spans(f.text, f.spans)
+    return base
 
 
 def main() -> None:
@@ -453,12 +547,21 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "private.jsonl"
 
+    def _iter_text_span_pairs(rec: dict):
+        if "turns" in rec:
+            for t in rec["turns"]:
+                for sp in t["spans"]:
+                    yield t["text"], sp
+        else:
+            for sp in rec["spans"]:
+                yield rec["text"], sp
+
     records = []
     for f in FIXTURES:
         rec = to_jsonl_record(f)
-        # quick self-check: every span's text matches the slice
-        for sp in rec["spans"]:
-            slice_ = rec["text"][sp["start"]:sp["end"]]
+        # quick self-check: every span's slice is non-empty
+        for text, sp in _iter_text_span_pairs(rec):
+            slice_ = text[sp["start"]:sp["end"]]
             assert slice_, f"empty span in {f.id}: {sp}"
         records.append(rec)
 
@@ -470,13 +573,17 @@ def main() -> None:
     by_lang = {"de": 0, "en": 0}
     label_counts: dict[str, int] = {}
     third_party_spans = 0
+    multi_turn = 0
     for rec in records:
         by_lang[rec["lang"]] = by_lang.get(rec["lang"], 0) + 1
-        for sp in rec["spans"]:
+        if "turns" in rec:
+            multi_turn += 1
+        for _, sp in _iter_text_span_pairs(rec):
             label_counts[sp["label"]] = label_counts.get(sp["label"], 0) + 1
             if sp.get("third_party"):
                 third_party_spans += 1
     print(f"  languages: {by_lang}")
+    print(f"  multi-turn fixtures: {multi_turn}")
     print(f"  total spans: {sum(label_counts.values())}")
     print(f"  third-party spans: {third_party_spans}")
     print(f"  labels seen: {sorted(label_counts)}")

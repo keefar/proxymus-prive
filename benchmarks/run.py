@@ -40,13 +40,29 @@ RESULTS_DIR = ROOT / "benchmarks" / "results"
 
 
 def load_fixtures(paths: list[Path]) -> list[dict]:
+    """Load JSONL fixtures. Multi-turn records (apf-h0j) are recognised and
+    skipped here because the single-turn detector harness can't score them
+    directly — cumulative-profile evaluation lives in the apf-00s scope.
+    They stay in the file so other tooling that handles turns can consume
+    them.
+    """
     fixtures: list[dict] = []
+    skipped_multi = 0
     for path in paths:
         with path.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
-                if line:
-                    fixtures.append(json.loads(line))
+                if not line:
+                    continue
+                rec = json.loads(line)
+                if "turns" in rec:
+                    skipped_multi += 1
+                    continue
+                fixtures.append(rec)
+    if skipped_multi:
+        print(f"note: skipped {skipped_multi} multi-turn fixture(s) — "
+              f"single-turn harness can't score them",
+              file=sys.stderr)
     return fixtures
 
 
