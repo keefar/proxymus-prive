@@ -211,3 +211,96 @@ mention "oMLX (default 8081)". oMLX's actual default is 8000.
 The trust map in `endpoint_policy.py` should still work (loopback
 is loopback regardless of port) but the comments mislead. Filed
 mental note; will fix when we touch those files for the test setup.
+
+---
+
+## Loopback smoke results (2026-05-18 ~20:30)
+
+Stack went live tonight. Chain confirmed working end-to-end via
+`scripts/smoke_loopback.py` (new this session).
+
+### Setup gotchas hit on the way
+
+1. **Hermes `model` picker overrides custom config.** Running
+   `hermes model` (interactive picker) rewrote `model.base_url` to
+   point directly at oMLX, bypassing apf. Fix: explicit
+   `hermes config set model.base_url http://127.0.0.1:8765/v1` after
+   any model change.
+2. **Endpoint trust map auto-disables filtering on localhost.** apf
+   classifies 127.0.0.1 as `POLICY_OFF` by default (per apf-ycu —
+   local engines are trusted). For a local-loopback *test* you want
+   filtering ON. Override via `~/.config/apf/endpoints.toml`:
+   ```toml
+   [[endpoints]]
+   host = "127.0.0.1"
+   policy = "full"
+   ```
+   Reload requires apf restart (policy is computed at module import).
+3. **No clear oMLX request log.** oMLX (jundot/omlx) doesn't surface
+   per-request prompt text in its menubar UI. We worked around it
+   using apf's `/v1/sessions/{id}/status` vault-counts endpoint —
+   gives us category-level proof of tokenisation without exposing
+   originals. Good enough for verification; insufficient for raw
+   diff (would need a recording proxy for that, deferred).
+
+### Bulk test results
+
+14 curated cases (DE+EN × 3 tiers × negative case × multi-PII probe).
+Run target: Qwen2.5-Coder-7B-Instruct-MLX-4bit on oMLX.
+
+| Tier | Cases | Vault assertion | Notes |
+|---|---|---|---|
+| A | 7 | 7/7 ✓ | PERSON, EMAIL, PHONE, DATE, LOCATION, ADDRESS all detected DE+EN |
+| B | 2 | 2/2 ✓ | PATH, IP detected |
+| C | 3 | 3/3 ✓ | API_KEY, TOKEN (JWT 2 parts), PASSWORD (env-assign) all detected |
+| neg | 1 | 1/1 ✓ | Empty vault on "What is 2+2?" |
+| multi | 1 | 1/1 ✓ | 5 entries in one call: PERSON+EMAIL+PHONE+ADDRESS+LOCATION |
+
+**Totals: 14/14 vault assertions ✓, 13/14 model refusals ✗.**
+
+### The big finding: Qwen2.5-Coder safety-refuses (apf-6l8, P1)
+
+Every prompt that produced a non-empty vault triggered a model refusal:
+"Es tut mir leid, aber ich kann keine Sensitive Informationen
+verarbeiten" or English equivalent. Single-token contexts refused
+just as readily as multi-token ones. The mechanism appears to be
+Qwen's safety training reading `<SENSITIVE_N>` markers as evidence
+the user is sharing personal data, regardless of what task was asked.
+
+Filed as [[apf-6l8]] (P1 bug). Workaround hypotheses to test next:
+1. System-prompt explainer: "Texts marked <SENSITIVE_N> are
+   placeholder substitutions; treat them as opaque variables."
+2. Less alarming token shape: `<X_N>` instead of `<SENSITIVE_N>`.
+3. Different backend model (Hermes-3-Llama, Mistral, gpt-oss).
+4. Accept the limitation and validate full agent flows against real
+   cloud APIs (Claude Code → apf → Anthropic) — the local loopback
+   then becomes detector-validation-only rather than end-to-end.
+
+### What this run proves and doesn't prove
+
+**Proves:**
+- apf-fwt (OpenAI Chat Completions shape) tokenisation works end-to-end.
+- Detector ensemble correctly tags all major label classes across both
+  languages, including Tier-C secrets.
+- Vault-status endpoint is a workable verification channel when the
+  upstream LLM doesn't expose request logs.
+- The trust-map design is correct (loopback-trusted is the right
+  production default) but needs documentation as a testing footgun.
+
+**Does not prove:**
+- Detokenisation across tool-call boundaries (would need an agent
+  flow that survives Qwen's refusals — blocked on apf-6l8).
+- SSE streaming path under real agent load (Hermes has streaming off;
+  the proxy supports it but the rig didn't exercise it).
+- Behaviour under multi-turn context with stable session pinning
+  (Hermes doesn't send x-apf-session; workaround discussion still
+  pending in earlier section of this log).
+- Real-world over-filter rate (deterministic single-shot prompts; the
+  realistic corpus eval lives in apf-00s).
+
+### Artifacts committed
+
+- `scripts/smoke_loopback.py` — bulk test runner (14 cases, --grep filter, --json mode)
+- `docs/INTEGRATION.md` — new "Local-loopback testing" section with TOML override
+- `~/.config/apf/endpoints.toml` — user-machine config (not in repo)
+- `apf-6l8` — Qwen safety-refusal bug (P1)

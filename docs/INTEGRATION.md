@@ -79,6 +79,81 @@ APF_UPSTREAM_BASE=https://api.anthropic.com \
     .venv/bin/python -m apf.manual_smoke --live
 ```
 
+## Local-loopback testing (Hermes + oMLX + apf, kein Cloud)
+
+Für PoC-Validierung ohne Cloud-Abhängigkeit lässt sich der ganze Stack
+lokal auf Apple-Silicon zusammenstöpseln:
+
+```
+Hermes Agent (CLI) ──▶ apf:8765 ──▶ oMLX:8000 ──▶ MLX-Modell
+                                          │
+                                          └── Vault, Detektor, Audit-Log
+                                              bleiben in apf
+```
+
+### Endpoint-Trust-Map Override (wichtig)
+
+Per Default klassifiziert apf `127.0.0.1` als **trusted local engine**
+(`POLICY_OFF` — keine Filterung; Begründung in
+`apf/endpoint_policy.py`). Das ist für Production sinnvoll (lokale
+Modelle brauchen keine Tokenisierung), aber **bricht den Test-Use-Case**
+— wenn du gegen ein lokales oMLX testen willst, *willst* du dass apf
+filtert. Konfig-Override anlegen:
+
+```bash
+mkdir -p ~/.config/apf
+cat > ~/.config/apf/endpoints.toml << 'EOF'
+[[endpoints]]
+host = "127.0.0.1"
+policy = "full"
+EOF
+```
+
+Der Wert wird beim apf-Modulimport gelesen — also **apf neu starten**
+nach der Änderung. Verifikation: `/v1/sessions/<id>/status` zeigt nach
+einem Request mit PII einen nicht-leeren Vault.
+
+### Apf für den Loopback starten
+
+```bash
+APF_OPENAI_UPSTREAM=http://127.0.0.1:8000 \
+    .venv/bin/python -m apf.proxy
+```
+
+### Hermes-Config (`~/.hermes/config.yaml`)
+
+```yaml
+model:
+  provider: custom
+  base_url: http://127.0.0.1:8765/v1   # apf, NICHT direkt oMLX
+  api_key: irrelevant-aber-pflicht
+  model: <exakte Model-ID wie oMLX sie zurückgibt unter /v1/models>
+  max_tokens: 4096
+```
+
+Achtung: `hermes model` (interaktiver Picker) überschreibt `base_url`
+auf den Direkt-Upstream — falls genutzt, danach
+`hermes config set model.base_url http://127.0.0.1:8765/v1`.
+
+### Bulk-Smoke
+
+`scripts/smoke_loopback.py` schickt 14 kuratierte Single-Turn-Requests
+durch apf (DE+EN, alle drei Tiers, Negativ-Case), liest pro Session
+den Vault-Status aus, und meldet pro Case ob die erwarteten
+Detector-Labels gefunden wurden plus ob das Modell mit Safety-Refusal
+geantwortet hat.
+
+```bash
+.venv/bin/python -m scripts.smoke_loopback             # alles
+.venv/bin/python -m scripts.smoke_loopback --grep tier_c
+.venv/bin/python -m scripts.smoke_loopback --json      # JSONL-Output
+```
+
+Erwarteter Output beim ersten erfolgreichen Run gegen
+Qwen2.5-Coder-7B-Instruct-MLX-4bit: 14/14 Vault-Assertions ✓,
+13/14 Model-Refusals (Qwen-spezifisches Safety-Verhalten —
+siehe bd `apf-6l8`).
+
 ## Bekannte Constraints
 
 - **Auth-Pass-Through:** Der Proxy speichert keine Credentials. Was der
