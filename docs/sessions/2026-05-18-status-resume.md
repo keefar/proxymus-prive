@@ -304,3 +304,35 @@ Filed as [[apf-6l8]] (P1 bug). Workaround hypotheses to test next:
 - `docs/INTEGRATION.md` — new "Local-loopback testing" section with TOML override
 - `~/.config/apf/endpoints.toml` — user-machine config (not in repo)
 - `apf-6l8` — Qwen safety-refusal bug (P1)
+
+---
+
+## Late-evening followup: apf-6l8 workaround test (21:20)
+
+After committing the rig, ran the apf-6l8 workaround #1 (system-prompt
+explainer) before EOD.
+
+Added `--system {off,explainer}` flag to `scripts/smoke_loopback.py`. Two
+variants of the explainer prompt tested:
+
+| Variant | Refusals | Vault baseline-per-request | Side effects |
+|---|---|---|---|
+| off | 13/14 | 0 | (baseline) |
+| explainer + example tokens | 1/14 | TOKEN=3, PERSON=3 | Detector tokenises example tokens; model improvises unrecognised `<<SECRET>>` markers |
+| explainer, no examples | 2/14 | IMPLICIT_PII=3, PERSON=1 | Detector still eats the system prompt text |
+
+Conclusions on apf-6l8:
+- System-prompt explainer **does work as a safety-refusal workaround**
+  (~85-93% refusal reduction).
+- Residual refusals (2/14 in variant B) are Tier-B prompts ("read file",
+  "connect to server") — Qwen refuses these for reasons orthogonal to
+  PII tokens. Multi-causal safety trigger.
+- Workaround surface is good enough for next-session agent-flow testing.
+
+Surfaced a separate design question, filed as [[apf-lnr]] (P3): should
+apf tokenise role=system messages at all? Current `_tokenise_message`
+treats all roles the same; that's correct for legit user-supplied
+system content but adds noise for control-plane system prompts. Not
+blocking apf-6l8 — variant B already works around it.
+
+`apf-6l8` issue updated with full data via `bd update --notes`.
