@@ -675,7 +675,7 @@ A best-effort metadata hook (proxy emits `apf-metadata` SSE event or
 client-side blur-on-render) is **deferred** — added only when a real
 client wants to consume it, not antizipativ.
 
-### 5.6 — Local-only categories [OPEN — tracked separately]
+### 5.6 — Local-only categories [OPEN — tracked under [[apf-sgz]]]
 
 Whether categories like asylum status (L6), domestic abuse (S10),
 whistleblower intent (P8), undocumented-immigration status (L5) should
@@ -684,20 +684,23 @@ local-fallback model pathway and routing logic that the proxy
 currently lacks. Deferred to its own design issue; needs concrete
 scenario evaluation, not a quick decision.
 
-### 5.7 — Audit log [OPEN — tracked separately]
+### 5.7 — Audit log [v1 SHIPPED under [[apf-ive]]; v2 OPEN under [[apf-x1t]]]
 
 Whether the filter keeps a local history of what categories were
 detected/forwarded per session. Self-review value vs. attack-surface
-trade-off; encryption + retention + UI all need design. Deferred to
-its own issue.
+trade-off; encryption + retention + UI all need design.
+v1 (in-memory, off-by-default, counts-only) is in [[apf-ive]].
+v2 (disk persistence + Keychain encryption + retention policy) is
+tracked under [[apf-x1t]].
 
-### 5.8 — Endpoint trust map [OPEN — tracked separately]
+### 5.8 — Endpoint trust map [v1 SHIPPED under [[apf-ycu]]; per-request override under [[apf-fwt]]]
 
 Raised in conversation rather than in the original list: per-endpoint
 filter policy (filter / categorical-only / off), so trusted endpoints
 (local models, audited no-log providers, Apple Private Compute) can
-be relaxed once they exist. v1 stays uniform-filter; v2 question
-captured under [[apf-ycu]].
+be relaxed once they exist. v1 ships a default trust map (loopback +
+mDNS + 8 common cloud LLM APIs) under [[apf-ycu]]; per-request
+override is folded into the OpenAI-compat shape work in [[apf-fwt]].
 
 ---
 
