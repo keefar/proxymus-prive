@@ -20,6 +20,12 @@ def assert_eq(actual, expected, label: str) -> None:
 
 def test_defaults() -> None:
     print("\n=== Test 1: built-in policy defaults ===")
+    # Point APF_ENDPOINT_CONFIG at a non-existent path so any
+    # user-machine ~/.config/apf/endpoints.toml override (which a
+    # developer may have created for local-loopback smoke testing,
+    # see docs/INTEGRATION.md) does not pollute these built-in
+    # default assertions.
+    os.environ["APF_ENDPOINT_CONFIG"] = "/nonexistent/apf-test-isolation.toml"
     # Loopback / local
     for host in ("localhost", "127.0.0.1", "::1"):
         assert_eq(ep.policy_for_host(host), ep.POLICY_OFF, f"{host} → off")
