@@ -47,6 +47,27 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
+## Memory Coexistence Policy (DEVIATES from default beads template)
+
+This project explicitly preserves Claude Code's existing user-level memory
+systems. Specifically:
+
+- **DO continue using** `~/.claude/projects/<proj>/memory/` (auto-memory)
+  for user preferences, feedback, and cross-project facts. Claude Code's
+  built-in mechanism handles these.
+- **DO use `bd remember`** for technical project-specific insights that
+  benefit from beads' cross-machine sync (Dolt push/pull) — e.g.
+  library-version pins, locked architecture decisions, fix-patterns
+  for known bugs.
+- **DO NOT silently divert** new memory entries to `bd remember` just
+  because beads is present. The two systems are complementary, not
+  competitive.
+
+Practical heuristic:
+- "Save for this project, must survive cross-machine" → `bd remember`
+- "Save about how user wants to work / generic engineering insight" →
+  user's auto-memory (the default Claude Code path)
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
 ## Beads Issue Tracker
 
@@ -65,7 +86,6 @@ bd close <id>         # Complete work
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
