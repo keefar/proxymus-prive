@@ -28,9 +28,9 @@ a model benchmark — see `docs/MODELS.md`.
 
 ## Hard rules
 
-1. **No code until the model benchmark completes.** The PoC's whole point is to retire two
-   unknowns first (does an MLX SLM detect German+English PII well enough? does tool-call
-   resolution work?). Writing proxy code before those are answered is premature.
+1. **Tests must stay green.** `.venv/bin/python -m pytest apf/` before committing changes
+   that touch `apf/`. 14 tests, ~0.2 s — no excuse to skip. Engine pinned (apf-4f4.8),
+   proxy ships, PoC is past research stage.
 2. **Always re-check model versions via WebSearch before recommending an install command.**
    The HF / vendor pages move; the model names and quantization formats listed in
    `docs/MODELS.md` are direction, not a shopping cart.
@@ -41,6 +41,16 @@ a model benchmark — see `docs/MODELS.md`.
    and can be committed.
 5. **Reversibility is a hard requirement.** Any solution that masks-without-restore is
    off-spec — agent responses must be readable to the user with originals intact.
+
+## Verification & debug toolkit
+
+- `.venv/bin/python -m pytest apf/` — unit tests
+- `.venv/bin/python -m apf.demo --text "..."` — standalone tokenise → tool-call → restore (no proxy)
+- `.venv/bin/python -m apf.manual_smoke` — in-process FastAPI smoke with fake upstream
+- `.venv/bin/python -m scripts.smoke_loopback` — 14-case bulk test against running proxy
+- `curl 127.0.0.1:8765/healthz` — detector status + active sessions + upstream
+- `curl 127.0.0.1:8765/v1/sessions/<id>/status` — vault counts (no originals leaked) — the diagnostic of choice when the upstream LLM has no request log
+- **Local-loopback gotcha:** `127.0.0.1` defaults to `POLICY_OFF` (no filtering) per `apf/endpoint_policy.py`. For local-test rigs override via `~/.config/apf/endpoints.toml` — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) "Local-loopback testing".
 
 ## Constraints
 
