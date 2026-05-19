@@ -701,7 +701,39 @@ class Ai4PrivacyModernBertAdapter(_HFTokenClassifierBase):
 from typing import Sequence
 
 
-def _merge_spans(span_groups: Sequence[list[Span]]) -> list[Span]:
+# apf-t7t FP-2: GLiNER PII models conflate general science / biology /
+# education vocabulary with personal HEALTH information ('Photosynthese'
+# scored HEALTH @ 0.79 from nvidia/gliner-PII). This stoplist drops HEALTH
+# spans whose surface is a common non-personal science term. Recall-safe
+# by construction — it only ever contains terms that are NOT personal
+# health info, so it cannot suppress a real health detection. Narrow v0;
+# extend as the over-filter eval surfaces more. The principled long-term
+# fix is detector retuning, tracked in apf-t7t.
+HEALTH_TERM_STOPLIST = frozenset(s.lower() for s in {
+    "photosynthesis", "photosynthese", "mitosis", "mitose", "meiosis",
+    "meiose", "osmosis", "osmose", "evolution", "gravitation", "gravity",
+    "thermodynamics", "thermodynamik", "algebra", "geometry", "geometrie",
+    "calculus", "biology", "biologie", "chemistry", "chemie", "physics",
+    "physik", "ecology", "ökologie", "photosynthesis.", "metabolism",
+    "metabolismus", "respiration", "zellatmung", "ecosystem", "ökosystem",
+})
+
+
+def _drop_health_stoplist(spans: list[Span], text: str) -> list[Span]:
+    """Drop HEALTH spans whose surface text is a known non-personal
+    science / education term (apf-t7t FP-2)."""
+    out: list[Span] = []
+    for s in spans:
+        if s.label == "HEALTH":
+            surface = text[s.start:s.end].strip().lower()
+            if surface in HEALTH_TERM_STOPLIST:
+                continue
+        out.append(s)
+    return out
+
+
+def _merge_spans(span_groups: Sequence[list[Span]],
+                 text: str | None = None) -> list[Span]:
     """Union, dedupe, longest-wins. Earlier groups win on label when nested.
 
     Exception (apf-eg3): locked-category labels are always kept even when
@@ -709,6 +741,9 @@ def _merge_spans(span_groups: Sequence[list[Span]]) -> list[Span]:
     triggers a hard refusal (apf-enr), so a generic PERSON span swallowing
     an inner ASYLUM_STATUS span would silently disable the refusal — which
     is the precise outcome the refusal pathway exists to prevent.
+
+    When `text` is supplied, the HEALTH science-term stoplist (apf-t7t
+    FP-2) is applied to the merged result.
     """
     # Late import to avoid module-load cycle (apf.local_only imports
     # nothing from benchmarks, but keeping this lazy is cheap insurance).
@@ -761,7 +796,10 @@ def _merge_spans(span_groups: Sequence[list[Span]]) -> list[Span]:
             new_kept.append((gi, s))
         kept = new_kept
     kept.sort(key=lambda t: t[1].start)
-    return [s for _, s in kept]
+    result = [s for _, s in kept]
+    if text is not None:
+        result = _drop_health_stoplist(result, text)
+    return result
 
 
 class EnsembleFastAdapter:
@@ -780,7 +818,7 @@ class EnsembleFastAdapter:
 
     def detect(self, text: str) -> list[Span]:
         groups = [d.detect(text) for d in self._detectors]
-        return _merge_spans(groups)
+        return _merge_spans(groups, text)
 
 
 class EnsembleMaxAdapter:
@@ -813,7 +851,7 @@ class EnsembleMaxAdapter:
 
     def detect(self, text: str) -> list[Span]:
         groups = [d.detect(text) for d in self._detectors]
-        return _merge_spans(groups)
+        return _merge_spans(groups, text)
 
 
 class EnsembleMaxPlusAdapter:
@@ -849,7 +887,7 @@ class EnsembleMaxPlusAdapter:
 
     def detect(self, text: str) -> list[Span]:
         groups = [d.detect(text) for d in self._detectors]
-        return _merge_spans(groups)
+        return _merge_spans(groups, text)
 
 
 class GlinerMultiPiiLowThresholdAdapter(_GlinerBase):
@@ -879,7 +917,7 @@ class EnsembleFullAdapter:
 
     def detect(self, text: str) -> list[Span]:
         groups = [d.detect(text) for d in self._detectors]
-        return _merge_spans(groups)
+        return _merge_spans(groups, text)
 
 
 # Register on import for run.py.
