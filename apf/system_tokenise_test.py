@@ -138,3 +138,75 @@ def test_anthropic_system_list_skipped_by_default(monkeypatch) -> None:
     }
     out = proxy._tokenise_request_body(body, vault)
     assert out["system"][0]["text"] == "Help ANNA."
+
+
+# ── apf-47e: locked-category scan must run on system regardless of flag ───
+#
+# The TOKENISE_SYSTEM flag controls whether role=system content is *tokenised*.
+# It MUST NOT also bypass the locked-category safety net — otherwise a system
+# prompt carrying e.g. ASYLUM_STATUS content would silently forward to a
+# cloud destination, defeating the apf-enr never-forward design.
+
+def _install_locked_detector(monkeypatch) -> None:
+    """Detector that emits an ASYLUM_STATUS span (a locked label per
+    apf/local_only.py) whenever 'ASYLUM' appears in the input. Used to
+    drive the locked-category scan without depending on the production
+    detector's vocabulary."""
+    class _LockedStub:
+        name = "locked-stub"
+        def detect(self, text: str):
+            if "ASYLUM" in text:
+                i = text.index("ASYLUM")
+                return [Span(start=i, end=i + 6, label="ASYLUM_STATUS",
+                             tier="A", confidence=1.0)]
+            return []
+    monkeypatch.setattr(proxy, "_DETECTOR", _LockedStub())
+
+
+def test_anthropic_locked_scan_fires_on_system_with_tokenise_system_off(monkeypatch) -> None:
+    _install_locked_detector(monkeypatch)
+    monkeypatch.setattr(proxy, "TOKENISE_SYSTEM", False)
+    body = {
+        "model": "claude-test",
+        "system": "User is preparing for ASYLUM interview.",
+        "messages": [{"role": "user", "content": "Help me."}],
+    }
+    locked = proxy._scan_body_for_locked(body)
+    assert "ASYLUM_STATUS" in locked, \
+        "locked scan must still detect categories in system messages " \
+        "even when TOKENISE_SYSTEM=False (the safety net is independent " \
+        "of tokenisation)"
+
+
+def test_anthropic_locked_scan_fires_on_system_list_with_tokenise_system_off(monkeypatch) -> None:
+    """Same invariant for Anthropic's array-form system field (apf-47e fix)."""
+    _install_locked_detector(monkeypatch)
+    monkeypatch.setattr(proxy, "TOKENISE_SYSTEM", False)
+    body = {
+        "model": "claude-test",
+        "system": [{"type": "text", "text": "User is in ASYLUM process."}],
+        "messages": [{"role": "user", "content": "Help me."}],
+    }
+    locked = proxy._scan_body_for_locked(body)
+    assert "ASYLUM_STATUS" in locked, \
+        "locked scan must include list-form system messages " \
+        "(fixed in apf-47e — was previously a gap)"
+
+
+def test_openai_locked_scan_fires_on_system_message(monkeypatch) -> None:
+    """Mirror invariant for the OpenAI shape: role=system messages must
+    still go through the locked scan regardless of TOKENISE_SYSTEM."""
+    from apf.openai_shape import scan_request_for_locked as oai_scan
+    _install_locked_detector(monkeypatch)
+    # No proxy.TOKENISE_SYSTEM gate on the OpenAI scan path — it scans
+    # all messages including system. Document that property here.
+    body = {
+        "model": "gpt-test",
+        "messages": [
+            {"role": "system", "content": "User is in ASYLUM interview phase."},
+            {"role": "user", "content": "Help me prepare."},
+        ],
+    }
+    locked = oai_scan(body, proxy._scan_text_for_locked)
+    assert "ASYLUM_STATUS" in locked, \
+        "OpenAI shape locked scan must include role=system content"

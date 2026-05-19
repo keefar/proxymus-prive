@@ -129,6 +129,51 @@ CASES: list[dict[str, Any]] = [
         "prompt": "What is 2 + 2? Answer with just the number.",
         "must_have": [], "min_total": 0, "max_total": 0,
     },
+    # apf-zzk: benign-prompt expansion. The detector should produce zero
+    # vault entries for all of these. Cases that DO populate the vault
+    # surface detector false-positives worth investigating separately.
+    {
+        "name": "negative_math_integral",
+        "lang": "en", "tier": "-",
+        "prompt": "Compute the indefinite integral of x squared with respect to x.",
+        "must_have": [], "min_total": 0, "max_total": 0,
+    },
+    {
+        "name": "negative_code_reverse_list",
+        "lang": "en", "tier": "-",
+        "prompt": "Write a Python function that reverses a list in place.",
+        "must_have": [], "min_total": 0, "max_total": 0,
+    },
+    {
+        "name": "negative_code_concept_hashtable",
+        "lang": "en", "tier": "-",
+        "prompt": "Explain how a hash table handles collisions in one paragraph.",
+        "must_have": [], "min_total": 0, "max_total": 0,
+    },
+    {
+        "name": "negative_translation",
+        "lang": "en", "tier": "-",
+        "prompt": "Translate the phrase 'Hello, how are you?' to German.",
+        "must_have": [], "min_total": 0, "max_total": 0,
+    },
+    {
+        "name": "negative_concept_de",
+        "lang": "de", "tier": "-",
+        "prompt": "Was bedeutet Photosynthese in zwei Sätzen?",
+        "must_have": [], "min_total": 0, "max_total": 0,
+    },
+    {
+        "name": "negative_creative_haiku",
+        "lang": "en", "tier": "-",
+        "prompt": "Write a haiku about clouds at sunset.",
+        "must_have": [], "min_total": 0, "max_total": 0,
+    },
+    {
+        "name": "negative_brainstorm",
+        "lang": "en", "tier": "-",
+        "prompt": "Brainstorm five names for a coffee shop. Keep it short.",
+        "must_have": [], "min_total": 0, "max_total": 0,
+    },
     {
         "name": "multi_pii_safety_probe",
         "lang": "de", "tier": "A",

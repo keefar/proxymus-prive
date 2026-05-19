@@ -702,7 +702,21 @@ from typing import Sequence
 
 
 def _merge_spans(span_groups: Sequence[list[Span]]) -> list[Span]:
-    """Union, dedupe, longest-wins. Earlier groups win on label when nested."""
+    """Union, dedupe, longest-wins. Earlier groups win on label when nested.
+
+    Exception (apf-eg3): locked-category labels are always kept even when
+    contained inside a larger generic-PII span. The locked-cat scan
+    triggers a hard refusal (apf-enr), so a generic PERSON span swallowing
+    an inner ASYLUM_STATUS span would silently disable the refusal — which
+    is the precise outcome the refusal pathway exists to prevent.
+    """
+    # Late import to avoid module-load cycle (apf.local_only imports
+    # nothing from benchmarks, but keeping this lazy is cheap insurance).
+    try:
+        from apf.local_only import DEFAULT_LOCKED_LABELS as _LOCKED
+    except ImportError:
+        _LOCKED = frozenset()
+
     flat: list[tuple[int, Span]] = []  # (group_idx, span)
     for gi, group in enumerate(span_groups):
         for s in group:
@@ -712,12 +726,15 @@ def _merge_spans(span_groups: Sequence[list[Span]]) -> list[Span]:
     flat.sort(key=lambda t: (t[1].start, -(t[1].end - t[1].start)))
     kept: list[tuple[int, Span]] = []
     for gi, s in flat:
-        # Skip if a previously-kept span fully covers this one.
+        # Skip if a previously-kept span fully covers this one — UNLESS
+        # this span carries a locked-category label, in which case it must
+        # survive (the refusal scan depends on seeing it).
         contained = False
-        for kgi, ks in kept:
-            if ks.start <= s.start and s.end <= ks.end:
-                contained = True
-                break
+        if s.label not in _LOCKED:
+            for kgi, ks in kept:
+                if ks.start <= s.start and s.end <= ks.end:
+                    contained = True
+                    break
         if contained:
             continue
         # If this span fully covers a previously-kept smaller span, replace
@@ -769,7 +786,9 @@ class EnsembleFastAdapter:
 class EnsembleMaxAdapter:
     """Wide net: regex (Tier B/C) + Presidio (fast NER + recognizers) +
     GLiNER multi-pii-v1 (multilingual + implicit) +
-    GLiNER nvidia (high Tier-B/C precision).
+    GLiNER nvidia (high Tier-B/C precision) +
+    locked-category regex (apf-eg3 v0: asylum/abuse/whistleblower/
+    undocumented; emits labels the apf-enr refusal pathway gates on).
     Each component contributes a different blind-spot patch. Slower than
     ensemble-fast but should hit higher recall."""
     name = "ensemble-max"
@@ -779,15 +798,18 @@ class EnsembleMaxAdapter:
 
     def warmup(self) -> None:
         from .adapters import RegexBaseline
+        from .adapters_locked import LockedCategoryRegexAdapter
         regex = RegexBaseline()
         presidio = PresidioAdapter()
         gliner_multi = GlinerMultiPiiAdapter()
         gliner_nvidia = GlinerNvidiaAdapter()
+        locked = LockedCategoryRegexAdapter()
         regex.warmup()
         presidio.warmup()
         gliner_multi.warmup()
         gliner_nvidia.warmup()
-        self._detectors = [regex, presidio, gliner_multi, gliner_nvidia]
+        locked.warmup()
+        self._detectors = [regex, presidio, gliner_multi, gliner_nvidia, locked]
 
     def detect(self, text: str) -> list[Span]:
         groups = [d.detect(text) for d in self._detectors]

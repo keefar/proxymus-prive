@@ -168,6 +168,14 @@ def _scan_body_for_locked(body: dict) -> list[str]:
                 seen.append(l)
     if isinstance(body.get("system"), str):
         _add(_scan_text_for_locked(body["system"]))
+    elif isinstance(body.get("system"), list):
+        # apf-47e: the Anthropic API accepts `system` as either a string or
+        # a list of typed parts. The locked-cat safety net has to scan both
+        # shapes regardless of TOKENISE_SYSTEM — otherwise a list-form
+        # system prompt with locked content could silently forward.
+        for part in body["system"]:
+            if isinstance(part, dict) and part.get("type") == "text":
+                _add(_scan_text_for_locked(part.get("text", "")))
     for msg in body.get("messages", []) or []:
         content = msg.get("content")
         if isinstance(content, str):
