@@ -732,6 +732,39 @@ def _drop_health_stoplist(spans: list[Span], text: str) -> list[Span]:
     return out
 
 
+# apf-8l1: GLiNER / Presidio NER over-fire PERSON on personal pronouns
+# ('I', 'ich', 'er', …). A pronoun is never a person's identifying
+# information — masking it leaks nothing and degrades the prompt. This
+# stoplist is recall-safe by construction: a span whose entire surface
+# is a pronoun cannot be a real name. Single-character PERSON spans
+# ('M', 'I') are dropped for the same reason — a lone letter does not
+# identify anyone.
+PERSON_PRONOUN_STOPLIST = frozenset({
+    # English
+    "i", "me", "my", "mine", "myself", "we", "us", "our", "ours",
+    "you", "your", "yours", "he", "him", "his", "she", "her", "hers",
+    "it", "its", "they", "them", "their", "theirs",
+    # German
+    "ich", "mich", "mir", "mein", "meine", "meiner", "meinem", "meinen",
+    "du", "dich", "dir", "dein", "deine", "er", "ihn", "ihm", "sein",
+    "seine", "sie", "es", "wir", "uns", "unser", "unsere", "ihr", "euch",
+    "euer", "eure", "ihnen", "ihre", "ihrer",
+})
+
+
+def _drop_person_noise(spans: list[Span], text: str) -> list[Span]:
+    """Drop PERSON spans that are a bare pronoun or a single character
+    (apf-8l1) — neither identifies anyone, both are pure over-detection."""
+    out: list[Span] = []
+    for s in spans:
+        if s.label == "PERSON":
+            surface = text[s.start:s.end].strip()
+            if len(surface) <= 1 or surface.lower() in PERSON_PRONOUN_STOPLIST:
+                continue
+        out.append(s)
+    return out
+
+
 def _merge_spans(span_groups: Sequence[list[Span]],
                  text: str | None = None) -> list[Span]:
     """Union, dedupe, longest-wins. Earlier groups win on label when nested.
@@ -799,6 +832,7 @@ def _merge_spans(span_groups: Sequence[list[Span]],
     result = [s for _, s in kept]
     if text is not None:
         result = _drop_health_stoplist(result, text)
+        result = _drop_person_noise(result, text)
     return result
 
 
