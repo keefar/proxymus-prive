@@ -38,12 +38,17 @@ from .vault import Vault
 # ── Request walker (client → upstream) ────────────────────────────────────
 
 def tokenise_request(
-    body: dict, vault: Vault, tokeniser_fn
+    body: dict, vault: Vault, tokeniser_fn, tokenise_system: bool = False,
 ) -> dict:
     """Walk an OpenAI Chat Completions request body and tokenise text
     surfaces. tokeniser_fn is the callback used by the proxy
     (apf.proxy._tokenise_text) so all the inline-bypass and detector
     plumbing applies uniformly.
+
+    tokenise_system controls whether role=system messages are tokenised
+    (apf-lnr). Default False: control-plane system prompts (filter explainer,
+    agent personality) leak no false-positive vault entries. Pass True for
+    setups whose system prompts legitimately carry user PII.
     """
     out = dict(body)
     msgs = out.get("messages")
@@ -51,6 +56,9 @@ def tokenise_request(
         return out
     new_msgs: list[dict] = []
     for msg in msgs:
+        if not tokenise_system and msg.get("role") == "system":
+            new_msgs.append(msg)
+            continue
         new_msgs.append(_tokenise_message(msg, vault, tokeniser_fn))
     out["messages"] = new_msgs
     return out

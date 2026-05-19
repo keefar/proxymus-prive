@@ -675,23 +675,27 @@ A best-effort metadata hook (proxy emits `apf-metadata` SSE event or
 client-side blur-on-render) is **deferred** — added only when a real
 client wants to consume it, not antizipativ.
 
-### 5.6 — Local-only categories [OPEN — tracked under [[apf-sgz]]]
+### 5.6 — Local-only categories [v1 SHIPPED under [[apf-enr]]; v2 DEFERRED — resolution in [[apf-sgz]]]
 
 Whether categories like asylum status (L6), domestic abuse (S10),
 whistleblower intent (P8), undocumented-immigration status (L5) should
-**never** leave the machine, regardless of tokenisation. Implies a
-local-fallback model pathway and routing logic that the proxy
-currently lacks. Deferred to its own design issue; needs concrete
-scenario evaluation, not a quick decision.
+**never** leave the machine, regardless of tokenisation. v1 (refuse +
+surface 422) ships in `apf/local_only.py`. v2 (route silently to local
+model) was the original aspiration but defers on three prerequisites:
+detector emits the labels, local-model dependency declared, agent-harness
+composition story concrete. Decision rationale in
+`docs/DESIGN-LOCAL-ONLY-ROUTING.md`. PoC stays on v1.
 
-### 5.7 — Audit log [v1 SHIPPED under [[apf-ive]]; v2 OPEN under [[apf-x1t]]]
+### 5.7 — Audit log [v1 SHIPPED under [[apf-ive]]; v2 DESIGNED + DEFERRED under [[apf-x1t]]]
 
 Whether the filter keeps a local history of what categories were
 detected/forwarded per session. Self-review value vs. attack-surface
 trade-off; encryption + retention + UI all need design.
 v1 (in-memory, off-by-default, counts-only) is in [[apf-ive]].
-v2 (disk persistence + Keychain encryption + retention policy) is
-tracked under [[apf-x1t]].
+v2 (SQLite + AES-GCM + Keychain-stored key + 7-day retention +
+`apf log` CLI) is designed in `docs/DESIGN-AUDIT-LOG-V2.md` — build
+deferred until PoC validation produces signal that disk persistence
+is worth the cost.
 
 ### 5.8 — Endpoint trust map [v1 SHIPPED under [[apf-ycu]]; per-request override under [[apf-fwt]]]
 

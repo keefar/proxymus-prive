@@ -27,7 +27,15 @@ import uuid
 from typing import Any
 
 APF_BASE = "http://127.0.0.1:8765"
-DEFAULT_MODEL = "Qwen2.5-Coder-7B-Instruct-MLX-4bit"
+# apf-6l8: comparison run 2026-05-19 across 4 backends with raw <SENSITIVE_N>
+# tokens (no system explainer). Refusal rates:
+#   Gemma-4-26B-A4B-it-4bit:    2/14  ← chosen default
+#   Qwen3.6-35B-A3B-mxfp4:      3/14  (some false-positives from thinking traces)
+#   granite-4.1-8b-mxfp8:       7/14
+#   Qwen2.5-Coder-7B-MLX-4bit: 13/14  (baseline that motivated apf-6l8)
+# Gemma matches Qwen2.5-Coder+variant-B explainer (2/14) WITHOUT needing the
+# explainer at all, which is the cleaner end-to-end rig.
+DEFAULT_MODEL = "gemma-4-26b-a4b-it-4bit"
 
 
 # Each case:

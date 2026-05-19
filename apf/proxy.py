@@ -82,6 +82,16 @@ _OPENAI_UPSTREAM_POLICY = (
 )
 PROXY_PORT = int(os.environ.get("APF_PORT", "8765"))
 
+# apf-lnr: control-plane system prompts (filter explainer, agent personality,
+# tool-use schemas) add steady-baseline false-positives to every vault when
+# tokenised, and confuse models that expect their system prompt verbatim.
+# Default: skip role=system. Opt-in via APF_TOKENISE_SYSTEM=1 for setups
+# whose system prompts legitimately contain user PII the proxy should mask.
+# Note: the locked-category scan ALWAYS runs on system messages regardless
+# of this flag — the safety net for never-forward categories does not depend
+# on whether we tokenise.
+TOKENISE_SYSTEM = os.environ.get("APF_TOKENISE_SYSTEM", "0") != "0"
+
 # Per-session vaults. In production: bounded LRU with eviction; for PoC, dict.
 _VAULTS: dict[str, Vault] = {}
 _DETECTOR: Any = None
@@ -249,13 +259,15 @@ def _detokenise_response_body(body: dict, vault: Vault) -> dict:
 
 
 def _tokenise_request_body(body: dict, vault: Vault) -> dict:
-    """Walk an Anthropic Messages API request and tokenise user/system text
-    + tool_result content. Leave the rest untouched."""
+    """Walk an Anthropic Messages API request and tokenise text + tool_result
+    content. The top-level `system` field is skipped unless TOKENISE_SYSTEM
+    is enabled (apf-lnr). Leave the rest untouched."""
     out = dict(body)
-    if isinstance(out.get("system"), str):
-        out["system"] = _tokenise_text(out["system"], vault)
-    elif isinstance(out.get("system"), list):
-        out["system"] = [_tokenise_part(p, vault) for p in out["system"]]
+    if TOKENISE_SYSTEM:
+        if isinstance(out.get("system"), str):
+            out["system"] = _tokenise_text(out["system"], vault)
+        elif isinstance(out.get("system"), list):
+            out["system"] = [_tokenise_part(p, vault) for p in out["system"]]
     if isinstance(out.get("messages"), list):
         new_messages = []
         for msg in out["messages"]:
@@ -601,7 +613,9 @@ async def chat_completions(
     if _OPENAI_UPSTREAM_POLICY == POLICY_OFF:
         tokenised = inbound
     else:
-        tokenised = oai_tokenise_request(inbound, vault, _tokenise_text)
+        tokenised = oai_tokenise_request(
+            inbound, vault, _tokenise_text, tokenise_system=TOKENISE_SYSTEM,
+        )
         if _audit_enabled():
             _AUDIT_LOG.record(session_id, vault.summary())
 

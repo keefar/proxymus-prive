@@ -180,6 +180,17 @@ siehe bd `apf-6l8`).
   bleiben ungesetzt (Tool muss explizit fehlschlagen statt einen Wert
   einzusetzen den der Vault gesehen hat).
 
+- **System-Prompt-Tokenisierung (apf-lnr):** Default ist OFF —
+  `role=system` Messages (Anthropic `system`-Feld + OpenAI `messages[0]`
+  mit `role=system`) werden **nicht** tokenisiert. Begründung: control-plane
+  Prompts (Filter-Explainer, Agent-Persönlichkeit, Tool-Schemata) sind
+  meist PII-frei und würden ansonsten als false-positive-Baseline in
+  jedem Vault-Summary auftauchen. Wenn dein System-Prompt legitim
+  User-PII enthält (z.B. user-profile-fed Agents), `APF_TOKENISE_SYSTEM=1`
+  setzen — dann läuft die Tokenisierung wie für andere Rollen auch.
+  Locked-Category-Refusal (apf-enr) prüft System-Messages **unabhängig**
+  vom Flag, der Safety-Net für Never-Forward-Kategorien bleibt aktiv.
+
 ## Troubleshooting
 
 - **"Connection refused" beim Client:** Proxy läuft nicht, oder Port
