@@ -3,8 +3,8 @@
 The ideal data flow is:
   proxy detects `OPENAI_API_KEY=sk-…` in outbound text
     → vault remembers "this secret came from key OPENAI_API_KEY"
-    → LLM sees `<SECRET>` token, never the real value
-    → LLM emits tool_use referencing `<SECRET>`
+    → LLM sees `<REF>` token, never the real value
+    → LLM emits tool_use referencing `<REF>`
     → local executor needs the real key — secret store reads it from
       env / Keychain by name and returns it
     → vault never had to hand out the value
@@ -121,8 +121,8 @@ def resolver_for_vault(vault, store: SecretStore) -> Callable[[], str | None]:
 
 # TODO: multi-secret tool calls. The current resolver is stateful and
 # returns secrets in vault order. If a single tool call contains two
-# different `<SECRET>` markers, both get resolved against entries 1 and 2
+# different bare `<REF>` markers, both get resolved against entries 1 and 2
 # of the vault — which is order-dependent and fragile. A better protocol
-# would have the LLM emit `<SECRET_1>`, `<SECRET_2>` (numbered surface
-# tokens), trading marginal information disclosure (the count) for
+# would have the LLM emit numbered Tier-C surface tokens (e.g. `<REF_S1>`,
+# `<REF_S2>`), trading marginal information disclosure (the count) for
 # unambiguous resolution. Tracked as a follow-up issue.

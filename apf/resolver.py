@@ -1,7 +1,7 @@
 """Tool-call boundary resolver.
 
-When the LLM produces a tool call (e.g. `send_email(to="<SENSITIVE_3>")` or
-`Bash(command="grep -r '<SENSITIVE_3>' /Users/<SENSITIVE_1>/inbox")`), the local
+When the LLM produces a tool call (e.g. `send_email(to="<REF_3>")` or
+`Bash(command="grep -r '<REF_3>' /Users/<REF_1>/inbox")`), the local
 tool executor needs the *real* values to do real work. The resolver walks
 the tool-call arguments (JSON-shaped) and substitutes vault tokens with
 their originals.
@@ -16,12 +16,12 @@ context. The contract is:
      in the next turn (using the same vault, so token identities stay
      consistent).
 
-Tier-C secrets (the opaque `<SECRET>` marker) cannot be resolved by this
-function alone — its vault lookup is ambiguous for `<SECRET>`. Pass a
-secret_resolver callable that knows which env var / keychain slot to read
-for a given context. The callable is invoked with no arguments and may
-return None to signal "no fill available; pass the literal token through"
-or a string to fill in.
+Tier-C secrets (the bare `<REF>` marker, no number suffix) cannot be
+resolved by this function alone — its vault lookup is ambiguous for
+`<REF>`. Pass a secret_resolver callable that knows which env var /
+keychain slot to read for a given context. The callable is invoked with
+no arguments and may return None to signal "no fill available; pass the
+literal token through" or a string to fill in.
 """
 from __future__ import annotations
 
@@ -43,10 +43,10 @@ def _resolve_string(value: str, vault: Vault,
 
     out = TOKEN_RE.sub(replace, value)
 
-    if "<SECRET>" in out and secret_resolver is not None:
+    if "<REF>" in out and secret_resolver is not None:
         replacement = secret_resolver()
         if replacement is not None:
-            out = out.replace("<SECRET>", replacement)
+            out = out.replace("<REF>", replacement)
     return out
 
 
@@ -60,9 +60,9 @@ def resolve_tool_call_args(
     Accepts strings, ints, floats, bools, None, lists, and dicts. Returns
     a new structure of the same shape with strings substituted.
 
-    `secret_resolver` is called when a `<SECRET>` marker is seen. Pass a
+    `secret_resolver` is called when a bare `<REF>` marker is seen. Pass a
     callable that returns the real secret (e.g. from env or keychain). If
-    None, `<SECRET>` markers are left in place — usually a bug, since the
+    None, `<REF>` markers are left in place — usually a bug, since the
     tool will then fail to authenticate; but explicit is better than
     silently leaking.
     """

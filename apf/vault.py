@@ -1,8 +1,8 @@
 """Session-scoped vault mapping original PII values to opaque tokens.
 
-Token shape decisions (per docs/THREAT-MODEL-PRIVATE.md §5.1)
--------------------------------------------------------------
-- Tier A and B: `<SENSITIVE_{N}>` where N is a single session-global counter.
+Token shape decisions (per docs/THREAT-MODEL-PRIVATE.md §5.1, refined apf-0uo 2026-05-19)
+-----------------------------------------------------------------------------------------
+- Tier A and B: `<REF_{N}>` where N is a single session-global counter.
   All categories share the same opaque surface so the LLM cannot deduce
   what kind of thing the placeholder represents (no <MEDICATION_1> /
   <DIAGNOSIS_2> distinction to cascade-leak the original value via context
@@ -10,13 +10,19 @@ Token shape decisions (per docs/THREAT-MODEL-PRIVATE.md §5.1)
   The internal `label` and `third_party` attributes survive on the entry
   for evaluation, audit, and out-of-band metadata channels — they're just
   not exposed in the surface token name.
-- Tier C (secrets): always `<SECRET>` — opaque, no type, no number. The LLM
+- Tier C (secrets): always `<REF>` — opaque, no type, no number. The LLM
   must not gain any information about what kind of secret it is. When a tool
   needs the real value, the local executor pulls it from environment /
   keychain, NOT from the vault. The vault stores Tier C entries for
   *auditing* and for the rare case where the executor genuinely needs the
   original (e.g. password copy-paste), but the surface API for the LLM only
-  ever exposes `<SECRET>`.
+  ever exposes `<REF>`.
+
+The rename from <SENSITIVE_N>/<SECRET> (pre-2026-05-19) drops two leaks:
+the literal word 'SENSITIVE' triggered model safety-refusals (apf-6l8),
+and it broadcast 'sensitive content was here' to anyone reading the
+upstream request body — the same meta-leak we avoided by going opaque
+instead of categorical. <REF_N>/<REF> is neutral on both axes.
 
 Third-party flag (per §5.2)
 ---------------------------
@@ -62,7 +68,7 @@ class Vault:
         # token → entry (for fast reverse lookup)
         self._by_token: dict[str, VaultEntry] = {}
         # single session-global counter for Tier A/B opaque tokens
-        self._sensitive_counter: int = 0
+        self._ref_counter: int = 0
         # User-declared bypass values (per apf-qzc). Spans matching any of
         # these are NOT tokenised — the original passes through to the LLM.
         # Populated by inline `!raw VALUE` markers and the
@@ -113,8 +119,8 @@ class Vault:
                             self._by_token[k] = entry
                 return entry
             if tier == "C":
-                token = "<SECRET>"
-                internal_token = f"<SECRET#{len(self._by_token) + 1}>"
+                token = "<REF>"
+                internal_token = f"<REF#{len(self._by_token) + 1}>"
                 entry = VaultEntry(token=token, original=original,
                                    label=label, tier=tier,
                                    confidence=confidence,
@@ -123,8 +129,8 @@ class Vault:
                 self._by_original[original] = entry
                 self._by_token[internal_token] = entry
             else:
-                self._sensitive_counter += 1
-                token = f"<SENSITIVE_{self._sensitive_counter}>"
+                self._ref_counter += 1
+                token = f"<REF_{self._ref_counter}>"
                 entry = VaultEntry(token=token, original=original,
                                    label=label, tier=tier,
                                    confidence=confidence,
@@ -145,7 +151,7 @@ class Vault:
         """Look up the original value for a token. Returns None if not found
         or if the token is a Tier-C surface token (which is intentionally
         ambiguous — caller must use a Tier-C-aware resolver instead)."""
-        if token == "<SECRET>":
+        if token == "<REF>":
             return None  # Tier C surface token — ambiguous by design.
         entry = self._by_token.get(token)
         return entry.original if entry else None

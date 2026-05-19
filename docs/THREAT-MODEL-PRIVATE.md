@@ -391,7 +391,7 @@ mechanic is insufficient for these.** The design options for handling
 them, in increasing order of intrusiveness:
 
 1. **Topic-tagged placeholder** — replace `<MEDICATION_1>` with a
-   semantically uninformative `<SENSITIVE_1>`. The LLM loses topical
+   semantically uninformative `<REF_1>`. The LLM loses topical
    context entirely; user gets generic answers. Strong privacy, weak
    utility.
 2. **Topic-tagged placeholder, with category visible** —
@@ -592,16 +592,27 @@ decided in conversation; two are deferred to dedicated issues so they
 get the attention they need without blocking the fixture-corpus work
 (apf-baw).
 
-### 5.1 — Categorical handling [DECIDED: opaque]
+### 5.1 — Categorical handling [DECIDED: opaque; token shape refined apf-0uo 2026-05-19]
 
-Default tokenisation is **opaque** (`<SENSITIVE_1>`, `<SENSITIVE_2>` …),
-not categorical. The supposed utility benefit of `<MEDICATION_1>` is
-moot once chat-as-confidant is out of scope (§0): in assistant-agent
-flows the LLM doesn't need to reason about the value semantically, it
-just shuffles tokens. The cost is real: a categorical placeholder
+Default tokenisation is **opaque** (`<REF_1>`, `<REF_2>` …), not
+categorical. The supposed utility benefit of `<MEDICATION_1>` is moot
+once chat-as-confidant is out of scope (§0): in assistant-agent flows
+the LLM doesn't need to reason about the value semantically, it just
+shuffles tokens. The cost is real: a categorical placeholder
 cascade-leaks the actual value — an LLM that infers `<MEDICATION_1>`
 is "an SSRI" from surrounding context has factually surfaced both
 medication class and the matching diagnosis.
+
+**Token-shape addendum (apf-0uo, 2026-05-19):** the placeholder is
+`<REF_N>` (and bare `<REF>` for Tier-C secrets), NOT `<SENSITIVE_N>`
+as originally documented. The word "SENSITIVE" was carried over from
+the §3.1 framing without scrutiny and leaked on two axes the original
+§5.1 decision didn't model: (a) safety-trigger word that cloud + local
+models parse and refuse against (the apf-6l8 finding), and (b) meta-
+leak announcing "sensitive content was at this position" to anyone
+reading the upstream request body — the same meta-information we
+avoided by going opaque-vs-categorical in the first place. `<REF_N>`
+is neutral on both axes while preserving the opacity property.
 
 **Future hook**: operations that need category-level info (sort
 appointments by importance, summarise types of items) get it

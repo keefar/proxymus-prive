@@ -21,7 +21,7 @@ Flow (non-streaming PoC):
 Session model
 -------------
 The proxy is stateless across turns *within* a process — every request
-carries the full conversation history. Token IDs (`<SENSITIVE_3>`) must stay
+carries the full conversation history. Token IDs (`<REF_3>`) must stay
 stable within a conversation. We key the vault by the `x-apf-session`
 header (client-supplied UUID); fall back to per-request session when the
 header is absent.
@@ -376,7 +376,7 @@ async def list_uncertain(session_id: str, threshold: float = 0.85) -> dict:
             secret_idx += 1
             out.append({
                 "kind": "secret",
-                "ref": f"SECRET#{secret_idx}",
+                "ref": f"REF#{secret_idx}",
                 "label": e.label,
                 "tier": e.tier,
                 "confidence": e.confidence,
@@ -512,7 +512,7 @@ def _build_response_headers(session_id: str, vault: Vault) -> dict[str, str]:
     uncertain = vault.low_confidence_entries(threshold=0.85)
     if uncertain:
         headers["x-apf-uncertain"] = ",".join(
-            e.token if e.tier != "C" else f"SECRET#{i}"
+            e.token if e.tier != "C" else f"REF#{i}"
             for i, e in enumerate(uncertain))
         headers["x-apf-uncertain-count"] = str(len(uncertain))
     return headers

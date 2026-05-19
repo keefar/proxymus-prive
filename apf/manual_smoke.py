@@ -57,8 +57,8 @@ class FakeUpstream:
                     "content": [
                         {"type": "text",
                          "text": "Klar, ich kümmere mich darum. Versende den Report "
-                                 "an <SENSITIVE_1>. Bei Rückfragen erreichst du mich auf "
-                                 "<SENSITIVE_2>."},
+                                 "an <REF_1>. Bei Rückfragen erreichst du mich auf "
+                                 "<REF_2>."},
                     ],
                     "model": "claude-test",
                     "stop_reason": "end_turn",

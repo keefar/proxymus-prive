@@ -58,9 +58,9 @@ class Fixture:
 # (PERSON, EMAIL, PHONE, ADDRESS, DATE, ORG, APPOINTMENT_HEALTH) and adds
 # private-life labels per the THREAT-MODEL-PRIVATE.md taxonomy.
 #
-# Per Frage 5.1 decision: at runtime, all of these will be replaced by
-# opaque <SENSITIVE_n>. The label here is for evaluation/audit, not for
-# what the LLM sees.
+# Per Frage 5.1 decision (refined apf-0uo 2026-05-19): at runtime, all of
+# these will be replaced by opaque <REF_n>. The label here is for
+# evaluation/audit, not for what the LLM sees.
 
 FIXTURES: list[Fixture] = [
 

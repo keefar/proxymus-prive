@@ -52,7 +52,7 @@ Per agent task, judge assigns one of:
   no awkward placeholder retention.
 - **partial** (1): reply answers part of the task; loss attributable
   to the filter (e.g. agent says "I can't tell you the date because
-  I see `<SENSITIVE_3>`" — that's a partial when the date is
+  I see `<REF_3>`" — that's a partial when the date is
   obviously the task).
 - **impossible** (0): reply can't address the task at all; the agent
   refuses, hallucinates, or asks for missing values that *were*

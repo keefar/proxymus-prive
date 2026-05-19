@@ -209,9 +209,7 @@ def _resolve_tool_call(tc: dict, vault: Vault, secret_resolver) -> dict:
 #   stream signals completion (finish_reason in a later chunk).
 
 
-_PARTIAL_TOKEN_RE = re.compile(
-    r"<[A-Z_][A-Z0-9_]*$|<S$|<SE$|<SEC$|<SECR$|<SECRE$|<SECRET$|<SECRET#\d*$"
-)
+_PARTIAL_TOKEN_RE = re.compile(r"<[A-Z_][A-Z0-9_]*$")
 
 
 def _split_safe(text: str) -> tuple[str, str]:

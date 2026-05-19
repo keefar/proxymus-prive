@@ -45,7 +45,7 @@ def test_openai_system_skipped_by_default() -> None:
         "system message should be untouched"
     assert "ANNA" not in out["messages"][1]["content"], \
         "user message must be tokenised"
-    assert "<SENSITIVE_" in out["messages"][1]["content"]
+    assert "<REF_" in out["messages"][1]["content"]
 
 
 def test_openai_system_tokenised_when_enabled() -> None:
@@ -61,7 +61,7 @@ def test_openai_system_tokenised_when_enabled() -> None:
     out = oai_tokenise_request(body, vault, _fake_tokeniser_fn,
                                tokenise_system=True)
     assert "ANNA" not in out["messages"][0]["content"]
-    assert "<SENSITIVE_" in out["messages"][0]["content"]
+    assert "<REF_" in out["messages"][0]["content"]
     assert "ANNA" not in out["messages"][1]["content"]
 
 
@@ -123,7 +123,7 @@ def test_anthropic_system_tokenised_when_enabled(monkeypatch) -> None:
     }
     out = proxy._tokenise_request_body(body, vault)
     assert "ANNA" not in out["system"]
-    assert "<SENSITIVE_" in out["system"]
+    assert "<REF_" in out["system"]
 
 
 def test_anthropic_system_list_skipped_by_default(monkeypatch) -> None:

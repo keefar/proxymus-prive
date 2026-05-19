@@ -6,7 +6,7 @@ Verifies:
 2. Tool-use input JSON is accumulated across deltas, parsed at
    content_block_stop, resolved via the vault, and emitted as a single
    final delta.
-3. Tier-C `<SECRET>` markers in text are NOT auto-resolved (they're
+3. Tier-C `<REF>` markers in text are NOT auto-resolved (they're
    ambiguous when multiple secrets are vaulted).
 """
 from __future__ import annotations
@@ -54,7 +54,7 @@ def test_text_token_straddle() -> None:
     print("\n=== Test 1: token straddles chunk boundary ===")
     vault = Vault()
     e = vault.get_or_mint("anna@example.de", "EMAIL", "A")
-    # e.token is "<SENSITIVE_1>" under the opaque-default scheme.
+    # e.token is "<REF_1>" under the opaque-default scheme.
     rew = SSERewriter(vault)
 
     # Simulate upstream stream that splits e.token across two text deltas.
@@ -131,7 +131,7 @@ def test_tool_use_resolution() -> None:
 
 
 def test_secret_marker_not_auto_resolved() -> None:
-    print("\n=== Test 3: <SECRET> markers stay opaque in streaming text ===")
+    print("\n=== Test 3: <REF> markers stay opaque in streaming text ===")
     vault = Vault()
     vault.get_or_mint("xk-fake-AAA", "API_KEY", "C")
     vault.get_or_mint("ghp_FAKE", "TOKEN", "C")
@@ -144,7 +144,7 @@ def test_secret_marker_not_auto_resolved() -> None:
     out.extend(rew.feed("content_block_delta",
                         {"type": "content_block_delta", "index": 0,
                          "delta": {"type": "text_delta",
-                                   "text": "Use <SECRET> for API"}}))
+                                   "text": "Use <REF> for API"}}))
     out.extend(rew.feed("content_block_stop",
                         {"type": "content_block_stop", "index": 0}))
     out.extend(rew.flush())
@@ -153,8 +153,8 @@ def test_secret_marker_not_auto_resolved() -> None:
     if "xk-fake-AAA" in full or "ghp_FAKE" in full:
         print(f"FAIL  secret leaked into text stream: {full!r}")
         sys.exit(1)
-    if "<SECRET>" not in full:
-        print(f"FAIL  <SECRET> marker was rewritten: {full!r}")
+    if "<REF>" not in full:
+        print(f"FAIL  <REF> marker was rewritten: {full!r}")
         sys.exit(1)
     print(f"  ok    secret marker stayed opaque: {full!r}")
 

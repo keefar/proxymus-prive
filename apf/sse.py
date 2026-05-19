@@ -1,7 +1,7 @@
 """SSE rewriter for Anthropic Messages API streaming responses.
 
-The challenge: tokens like `<SENSITIVE_1>` may straddle SSE chunk boundaries
-(`<SENSI` in one chunk, `TIVE_1>` in the next). Detokenising each chunk
+The challenge: tokens like `<REF_1>` may straddle SSE chunk boundaries
+(`<R` in one chunk, `EF_1>` in the next). Detokenising each chunk
 independently would corrupt them. Solution: a small per-content-block
 text buffer that holds back any partial-token tail.
 
@@ -24,7 +24,10 @@ from .vault import Vault
 
 
 # A `<` not yet closed by `>` could be the start of a token; hold it back.
-_PARTIAL_TOKEN_RE = re.compile(r"<[A-Z_][A-Z0-9_]*$|<S$|<SE$|<SEC$|<SECR$|<SECRE$|<SECRET$|<SECRET#\d*$")
+# All possible token shapes (<REF>, <REF_N>) start with `<` followed by
+# uppercase letters / digits / underscores — the alternative below matches
+# every legal prefix of such a token.
+_PARTIAL_TOKEN_RE = re.compile(r"<[A-Z_][A-Z0-9_]*$")
 
 
 def _split_safe(text: str) -> tuple[str, str]:

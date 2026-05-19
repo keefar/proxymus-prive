@@ -56,7 +56,7 @@ What lives here: API keys, OAuth tokens, private keys (SSH, GPG, TLS), passwords
 database connection strings carrying credentials, `.env`-style secrets.
 
 Handling: **opaque redaction, not reversible round-trip.** The LLM sees at most
-`<SECRET>` with no type or hint. When a tool needs the value, the local executor pulls
+bare `<REF>` with no type or hint (token shape refined in apf-0uo 2026-05-19 from earlier `<SECRET>`). When a tool needs the value, the local executor pulls
 it from environment / keychain / vault directly and substitutes at exec time — the
 secret never crosses the wire and never enters the prompt. Unlike Tier A and B,
 reversibility is *not* a goal; *unobservability* is.

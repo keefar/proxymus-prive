@@ -2,7 +2,7 @@
 
 **Status (2026-05-18):** PoC end-to-end. FastAPI proxy speaks Anthropic
 Messages **and** OpenAI Chat Completions, SSE streaming wired, opaque
-`<SENSITIVE_N>` tokenisation with stable per-session IDs, secret resolver
+`<REF_N>` tokenisation with stable per-session IDs, secret resolver
 hook at the tool-call boundary, regex+GLiNER+Nemotron ensemble detector,
 endpoint trust map, off-by-default audit-log scaffold. 14 tests, all
 green in 0.21 s (`.venv/bin/python -m pytest apf/`). Smoke runner spins
@@ -74,7 +74,7 @@ assistant; combined memory budget for filter models is ≤ 4 GB.
 apf/                          # filter runtime
   proxy.py                    # FastAPI: /v1/messages (Anthropic) + /v1/chat/completions (OpenAI)
   tokenizer.py / detokenizer.py
-  vault.py                    # per-session vault, stable <SENSITIVE_N> IDs
+  vault.py                    # per-session vault, stable <REF_N> IDs
   resolver.py + secrets.py    # tool-call-boundary resolution (the differentiator)
   sse.py / openai_shape.py    # streaming + OpenAI shape adapter
   endpoint_policy.py          # trust map (loopback + mDNS + cloud APIs)

@@ -91,7 +91,7 @@ def main() -> int:
     with TestClient(proxy.app) as client:
         # Test 1: round-trip. Two-phase, because under the opaque-default
         # scheme (THREAT-MODEL-PRIVATE.md §5.1) the fake upstream cannot
-        # know which <SENSITIVE_N> indices will be minted without having
+        # know which <REF_N> indices will be minted without having
         # seen the request first. Phase A populates the vault; phase B
         # crafts a response referencing the real vault tokens and verifies
         # full detokenisation.
@@ -126,7 +126,7 @@ def main() -> int:
             print("FAIL  upstream still saw the raw email")
             print(f"  body: {out_text!r}")
             sys.exit(1)
-        if "<SENSITIVE_" not in out_text:
+        if "<REF_" not in out_text:
             print("FAIL  upstream body has no opaque tokens — detection or tokenisation broken")
             print(f"  body: {out_text!r}")
             sys.exit(1)
@@ -167,7 +167,7 @@ def main() -> int:
 
         client_body = resp.json()
         assistant_text = client_body["content"][0]["text"]
-        if "<SENSITIVE_" in assistant_text:
+        if "<REF_" in assistant_text:
             print("FAIL  client response still contained opaque tokens")
             print(f"  text: {assistant_text!r}")
             sys.exit(1)
@@ -178,7 +178,7 @@ def main() -> int:
         print(f"        {assistant_text!r}")
 
         tool_input = client_body["content"][1]["input"]
-        if "<SENSITIVE_" in tool_input.get("to", ""):
+        if "<REF_" in tool_input.get("to", ""):
             print("FAIL  tool_use.input still contained opaque tokens")
             sys.exit(1)
         if tool_input.get("to") != "thomas.weber@example.de":
@@ -498,8 +498,8 @@ def main() -> int:
                 print(f"FAIL  secret leaked to upstream: {leak!r}")
                 print(f"  body: {out_secret!r}")
                 sys.exit(1)
-        if "<SECRET>" not in out_secret:
-            print("FAIL  no <SECRET> opaque markers in upstream payload")
+        if "<REF>" not in out_secret:
+            print("FAIL  no <REF> opaque markers in upstream payload")
             print(f"  body: {out_secret!r}")
             sys.exit(1)
         print(f"  ok    secrets opaque to upstream:")
@@ -537,7 +537,7 @@ def main() -> int:
         if "thomas.weber@example.de" in user_text:
             print(f"FAIL  raw email reached upstream: {user_text!r}")
             sys.exit(1)
-        if "<SENSITIVE_" not in user_text:
+        if "<REF_" not in user_text:
             print(f"FAIL  no opaque tokens in upstream body: {user_text!r}")
             sys.exit(1)
         print(f"  ok    OpenAI upstream saw tokenised: {user_text!r}")
@@ -582,7 +582,7 @@ def main() -> int:
         )
         assert_eq(resp_oai.status_code, 200, "OpenAI roundtrip status 200")
         oai_msg = resp_oai.json()["choices"][0]["message"]
-        if "<SENSITIVE_" in oai_msg["content"]:
+        if "<REF_" in oai_msg["content"]:
             print(f"FAIL  client text not detokenised: {oai_msg['content']!r}")
             sys.exit(1)
         if "thomas.weber@example.de" not in oai_msg["content"]:

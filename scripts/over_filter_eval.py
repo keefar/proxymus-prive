@@ -151,9 +151,9 @@ def apply_v1_filter(text: str, spans: list[dict]) -> str:
     pieces: list[str] = []
     cursor = len(text)
     out = text
-    # Walk right-to-left, replacing each span with <SENSITIVE_N>.
+    # Walk right-to-left, replacing each span with <REF_N>.
     for s in spans_sorted:
-        token = f"<SENSITIVE_{counter}>"
+        token = f"<REF_{counter}>"
         out = out[:s["start"]] + token + out[s["end"]:]
         counter -= 1
     return out
