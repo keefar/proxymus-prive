@@ -885,6 +885,33 @@ class EnsembleFullAdapter:
 # Register on import for run.py.
 # ---- Microsoft Presidio (analyzer with regex + spaCy NER) ----------------
 
+# apf-t7t mitigation: Presidio's NRP recognizer is over-broad — it fires
+# on any language or nationality name regardless of context. In benign
+# patterns ('translate to German', 'a Spanish word for...') this produces
+# false-positive NOTE_SENSITIVE vault entries that aren't actually PII.
+# The privacy value of flagging widely-spoken language names is ~zero;
+# the wider apf taxonomy (ASYLUM_STATUS, etc.) catches the truly
+# sensitive nationality / origin declarations via dedicated labels.
+#
+# This stop-list filters single-word NRP matches that are common
+# language or nationality names. Multi-word matches and uncommon names
+# still pass through (where the privacy concern is more plausible).
+PRESIDIO_NRP_STOPLIST = frozenset(s.lower() for s in {
+    # Common languages (EN + native names)
+    "english", "german", "deutsch", "spanish", "french", "italian",
+    "portuguese", "dutch", "swedish", "norwegian", "danish", "finnish",
+    "polish", "russian", "ukrainian", "czech", "slovak", "hungarian",
+    "romanian", "bulgarian", "greek", "turkish", "arabic", "hebrew",
+    "persian", "farsi", "hindi", "urdu", "bengali", "tamil", "telugu",
+    "chinese", "mandarin", "cantonese", "japanese", "korean", "vietnamese",
+    "thai", "indonesian", "malay", "tagalog", "filipino", "swahili",
+    "latin", "esperanto",
+    # Common nationality / demonym forms (matching the above)
+    "english", "germans", "americans", "british", "french", "spaniards",
+    "italians", "europeans", "asians", "africans",
+})
+
+
 PRESIDIO_MAP = {
     "PERSON": "PERSON",
     "EMAIL_ADDRESS": "EMAIL",
@@ -948,6 +975,13 @@ class PresidioAdapter:
             tier = LABEL_TIER.get(label)
             if tier is None:
                 continue
+            # apf-t7t: drop NRP-derived NOTE_SENSITIVE spans whose surface
+            # is a single common language / nationality. See
+            # PRESIDIO_NRP_STOPLIST above for the rationale.
+            if r.entity_type == "NRP":
+                surface = text[r.start:r.end].strip().lower()
+                if surface in PRESIDIO_NRP_STOPLIST:
+                    continue
             raw = Span(start=r.start, end=r.end, label=label, tier=tier,
                        confidence=float(r.score))
             cleaned = _clean_span(text, raw)
