@@ -9,8 +9,9 @@ outgoing traffic, detects PII via a small MLX-hosted model + deterministic detec
 swaps it for stable placeholders before it leaves the machine, restores originals in
 incoming responses. **Target hardware:** M5 MacBook Air, 32 GB unified memory.
 
-**Current status:** research + scaffolding only. No code yet. The first technical task is
-a model benchmark — see `docs/MODELS.md`.
+**Current status:** working PoC. FastAPI proxy (Anthropic Messages + OpenAI Chat
+Completions, both streaming), MLX detector ensemble, vault round-trip, tool-call
+boundary resolution — shipped with a green test suite. Past the research stage.
 
 ## Where to look first
 
@@ -26,11 +27,16 @@ a model benchmark — see `docs/MODELS.md`.
 6. **`docs/MODELS.md`** — candidate models + benchmark plan
 7. **`docs/ARCHITECTURE.md`** — design options, open questions, decision log
 
+**Code map gotcha:** the detector ensemble is `benchmarks/adapters_mlx.py`
+(`EnsembleMaxAdapter`) — the proxy imports it from `benchmarks/`, not `apf/`.
+Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
+(older issues and docs say "tokenize" — same operation, renamed in apf-ocq).
+
 ## Hard rules
 
-1. **Tests must stay green.** `.venv/bin/python -m pytest apf/` before committing changes
-   that touch `apf/`. 14 tests, ~0.2 s — no excuse to skip. Engine pinned (apf-4f4.8),
-   proxy ships, PoC is past research stage.
+1. **Tests must stay green.** `.venv/bin/python -m pytest apf/ benchmarks/` before
+   committing changes to `apf/` or the detector — sub-second run, no excuse to skip.
+   Detector-adapter tests live under `benchmarks/`; don't scope pytest to `apf/` alone.
 2. **Always re-check model versions via WebSearch before recommending an install command.**
    The HF / vendor pages move; the model names and quantization formats listed in
    `docs/MODELS.md` are direction, not a shopping cart.
@@ -47,7 +53,9 @@ a model benchmark — see `docs/MODELS.md`.
 - `.venv/bin/python -m pytest apf/` — unit tests
 - `.venv/bin/python -m apf.demo --text "..."` — standalone tokenise → tool-call → restore (no proxy)
 - `.venv/bin/python -m apf.manual_smoke` — in-process FastAPI smoke with fake upstream
-- `.venv/bin/python -m scripts.smoke_loopback` — 14-case bulk test against running proxy
+- `.venv/bin/python -m scripts.smoke_loopback` — bulk test vs. a running proxy (incl. benign no-PII cases)
+- `.venv/bin/python -m benchmarks.run --adapter ensemble-max --fixtures <f>` — detector
+  precision/recall/FP benchmark; result JSON lands in `benchmarks/results/` (gitignored)
 - `curl 127.0.0.1:8765/healthz` — detector status + active sessions + upstream
 - `curl 127.0.0.1:8765/v1/sessions/<id>/status` — vault counts (no originals leaked) — the diagnostic of choice when the upstream LLM has no request log
 - **Local-loopback gotcha:** `127.0.0.1` defaults to `POLICY_OFF` (no filtering) per `apf/endpoint_policy.py`. For local-test rigs override via `~/.config/apf/endpoints.toml` — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) "Local-loopback testing".
@@ -62,7 +70,7 @@ a model benchmark — see `docs/MODELS.md`.
 ## Key architectural premise
 
 The differentiator is **tool-call boundary resolution** — when the agent's plan references
-a tokenized value (`grep "<EMAIL_3>"`), the proxy / agent harness must resolve the token
+a masked value (`grep "<REF_3>"`), the proxy / agent harness must resolve the token
 only at the moment of tool execution, never surface the resolved value back into the LLM
 context. This is the piece nobody else solves and the reason this project is worth building
 instead of using an existing solution.
