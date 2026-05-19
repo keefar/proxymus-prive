@@ -92,6 +92,23 @@ PROXY_PORT = int(os.environ.get("APF_PORT", "8765"))
 # on whether we tokenise.
 TOKENISE_SYSTEM = os.environ.get("APF_TOKENISE_SYSTEM", "0") != "0"
 
+# apf-1f6: labels detected but NOT tokenised — the value passes through raw.
+# ORG is opt-out by default: for the coding-agent use case the overwhelming
+# majority of ORG mentions are public software / services (GitHub, Stripe,
+# OpenAI) where masking yields ~zero privacy gain and breaks the prompt
+# ('write a Stripe client' with <REF_N> is nonsense). Genuinely sensitive
+# org-ish content (employer, asylum/abuse-related orgs) is covered by other
+# labels / the locked-category set. Override with APF_SKIP_LABELS (comma-
+# separated); set APF_SKIP_LABELS= (empty) to mask everything including ORG.
+def _load_skip_labels() -> frozenset[str]:
+    raw = os.environ.get("APF_SKIP_LABELS")
+    if raw is None:
+        return frozenset({"ORG"})
+    return frozenset(t.strip() for t in raw.split(",") if t.strip())
+
+
+SKIP_LABELS = _load_skip_labels()
+
 # Per-session vaults. In production: bounded LRU with eviction; for PoC, dict.
 _VAULTS: dict[str, Vault] = {}
 _DETECTOR: Any = None
@@ -135,9 +152,11 @@ def _tokenise_text(text: str, vault: Vault) -> str:
         return text
     cleaned = _extract_inline_bypass(text, vault)
     detected = _DETECTOR.detect(cleaned)
+    # apf-1f6: drop spans whose label is in SKIP_LABELS (default: ORG) —
+    # detected but not masked, the value passes through raw.
     spans = [Span(start=s.start, end=s.end, label=s.label, tier=s.tier,
                   confidence=getattr(s, "confidence", 1.0))
-             for s in detected]
+             for s in detected if s.label not in SKIP_LABELS]
     return tokenize_text(cleaned, spans, vault)
 
 

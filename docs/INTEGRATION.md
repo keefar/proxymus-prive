@@ -191,6 +191,18 @@ siehe bd `apf-6l8`).
   Locked-Category-Refusal (apf-enr) prüft System-Messages **unabhängig**
   vom Flag, der Safety-Net für Never-Forward-Kategorien bleibt aktiv.
 
+- **Skip-Labels (apf-1f6):** `APF_SKIP_LABELS` ist eine kommaseparierte
+  Liste von Detector-Labels, die zwar erkannt aber **nicht** maskiert
+  werden — der Wert geht roh durch. Default: `ORG`. Begründung: im
+  Coding-Agent-Kontext sind ORG-Mentions fast immer public software /
+  services (GitHub, Stripe, OpenAI) — Maskieren bringt ~null Privacy-
+  Gewinn und zerstört den Prompt (`<REF_N>`-API-Client statt
+  `Stripe`-API-Client). Genuin sensible Org-Bezüge (Arbeitgeber,
+  asyl-/gewalt-bezogene Orgs) sind über andere Labels bzw. die
+  Locked-Category-Liste abgedeckt. `APF_SKIP_LABELS=` (leer) maskiert
+  wieder alles inklusive ORG; `APF_SKIP_LABELS=ORG,DATE` erweitert die
+  Liste.
+
 ## Troubleshooting
 
 - **"Connection refused" beim Client:** Proxy läuft nicht, oder Port
