@@ -35,10 +35,12 @@ class FakeUpstream:
 
     def __init__(self) -> None:
         self.last_request_body: dict | None = None
+        self.last_request_headers: dict | None = None
         self.next_response: dict | None = None
 
     async def post(self, url, json=None, headers=None):  # noqa: A002
         self.last_request_body = json
+        self.last_request_headers = headers
         body = self.next_response or {
             "id": "msg_test",
             "type": "message",
@@ -115,9 +117,16 @@ def main() -> int:
                     ]},
                 ],
             },
-            headers={"x-api-key": "test-key", "x-apf-session": "session-A"},
+            headers={"x-api-key": "test-key", "x-apf-session": "session-A",
+                     "anthropic-beta": "context-management-2025-06-27"},
         )
         assert_eq(warmup.status_code, 200, "warmup status 200")
+
+        # apf-3mb: the anthropic-beta header must reach the upstream — beta
+        # body fields (context_management, …) 400 without it.
+        fwd = (fake.last_request_headers or {}).get("anthropic-beta")
+        assert_eq(fwd, "context-management-2025-06-27",
+                  "anthropic-beta header forwarded to upstream")
 
         # The upstream should have seen tokens, not the raw PII.
         out_body = fake.last_request_body

@@ -452,6 +452,14 @@ async def messages(
     auth = request.headers.get("authorization")
     if auth:
         upstream_headers["authorization"] = auth
+    # apf-3mb: beta-gated body fields (context_management, …) that clients
+    # like Claude Code send are only accepted by the API when the matching
+    # `anthropic-beta` header is present. Dropping it makes the API 400 the
+    # unknown body field ("Extra inputs are not permitted"). Forward verbatim
+    # — the header is a comma-separated list of beta flags.
+    beta = request.headers.get("anthropic-beta")
+    if beta:
+        upstream_headers["anthropic-beta"] = beta
 
     # Streaming path: tokenised request is forwarded with `stream: true`,
     # response is rewritten on the fly via SSERewriter.
