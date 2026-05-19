@@ -2,7 +2,7 @@
 
 Some categories carry harm vectors so severe (asylum status, domestic
 abuse content, undocumented immigration, whistleblower intent) that
-opaque tokenisation is not enough — *the fact that the user is processing
+opaque masking is not enough — *the fact that the user is processing
 this category* is itself a leak when forwarded to a cloud LLM provider.
 Government subpoena, future-policy-change, and provider-side metadata
 correlation are all real risks for these categories.

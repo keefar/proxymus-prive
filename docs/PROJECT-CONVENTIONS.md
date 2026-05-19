@@ -26,13 +26,13 @@ Naming patterns by extension (sampled):
 
 **.py** — sample basenames:
 ```
-tokenizer.py
+masker.py
 __init__.py
 build_fixtures.py
 vault.py
 adapters.py
 proxy_test.py
-detokenizer.py
+unmasker.py
 audit_log.py
 secrets_test.py
 demo.py

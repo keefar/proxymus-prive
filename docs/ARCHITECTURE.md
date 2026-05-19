@@ -25,7 +25,7 @@ organisations, dates, appointments, **health information (doctor visits, diagnos
 medication)**, relationship hints, financial fragments, sensitive note content,
 implicit PII (paraphrased identifying details).
 
-Handling: **tokenize → LLM works on tokens → resolve at the boundary** (either inside a
+Handling: **mask → LLM works on tokens → resolve at the boundary** (either inside a
 specific `tool_use` arg before local execution, or in the rendered response shown to the
 user). Two-way reversible.
 
@@ -41,14 +41,14 @@ Examples of correct flow:
 What lives here: filesystem paths (`/Users/chris/...`), filenames that encode user
 identity, hostnames, local + public IP addresses, machine-specific URLs.
 
-Handling: tokenize, but the **tool-call boundary resolver is the load-bearing piece** —
+Handling: mask, but the **tool-call boundary resolver is the load-bearing piece** —
 every `Read`, `Write`, `Bash`, `grep` needs the real value to execute. Cannot be left
 purely to "resolve only in response to user" because the agent's own actions depend on
 resolution.
 
 Open sub-question: which subset of Tier B is *also* user-policy-configurable? Some users
 want `/Users/chris` masked end-to-end; others consider it harmless. The PoC will treat
-all Tier B values as tokenized by default and let policy loosen later.
+all Tier B values as masked by default and let policy loosen later.
 
 ### Tier C — Secrets (LLM must never see the value)
 
@@ -70,7 +70,7 @@ at all, not even via tokens.
 The component map below operates uniformly on text spans, but the **policy table** that
 maps detected labels to handling actions has three branches:
 
-| Tier | Detect | Tokenize | Resolve in response | Resolve at tool boundary | Block & redact |
+| Tier | Detect | Mask | Resolve in response | Resolve at tool boundary | Block & redact |
 |------|:------:|:--------:|:--------------------:|:------------------------:|:--------------:|
 | A — Content | ✅ | ✅ | ✅ | when needed | — |
 | B — Operational | ✅ | ✅ | optional (policy) | **always** | — |
@@ -105,7 +105,7 @@ Three candidate locations:
 |---|---|---|
 | **In the proxy** | Single place to reason about; no agent-side changes | Proxy can't know which tokens will be passed to a `Bash` tool vs. left in narrative. Would have to resolve everything in tool_use args — risks re-leaking via the agent's reasoning that follows |
 | **In an agent-side wrapper** (Claude Code hook / MCP server) | Knows exactly when a token is about to hit a tool; can resolve only there | Requires per-agent integration; doesn't generalize cleanly across Cursor, Aider, Codex |
-| **Hybrid** | Proxy resolves tokens *inside* `tool_use` blocks before they reach the agent's local executor; everything else stays tokenized | Most complex; needs to parse provider-specific message structures (Anthropic `tool_use`, OpenAI `tool_calls`) |
+| **Hybrid** | Proxy resolves tokens *inside* `tool_use` blocks before they reach the agent's local executor; everything else stays masked | Most complex; needs to parse provider-specific message structures (Anthropic `tool_use`, OpenAI `tool_calls`) |
 
 The hybrid is most likely correct but most expensive. **PoC plan:** start with the simplest
 working version (resolve everything in tool args, accept leak risk), measure how often it
@@ -117,7 +117,7 @@ actually leaks via narrative, and only build the smarter version if needed.
   load-bearing for tool execution.
 - Tier B (operational paths/hosts/IPs) is exactly where the tool-call boundary matters;
   this is the class that drives the design.
-- Tier C (secrets) sidesteps the question — they're never tokenized into the prompt at
+- Tier C (secrets) sidesteps the question — they're never masked into the prompt at
   all; the agent harness fills them in from a secret store at exec time, independent of
   any in-proxy resolver.
 

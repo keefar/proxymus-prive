@@ -187,9 +187,9 @@ any single jurisdiction's special-category list.
     span with anchor word).
   - `hard` — needs semantic understanding (paraphrase, implicit
     reference, context-dependent meaning).
-  - `categorical-only` — the *value* can be tokenised, but the *fact
+  - `categorical-only` — the *value* can be masked, but the *fact
     that the topic appeared in this category at all* is itself the
-    leak. Tokenising "Lexapro" to `<MEDICATION_1>` still tells the
+    leak. Masking "Lexapro" to `<MEDICATION_1>` still tells the
     cloud LLM the user is on medication. These cases need a
     different mechanic than reversible substitution — see §3 and §5.
 - **Tier mapping**: A (content, reversible), B (operational, tool-
@@ -312,7 +312,7 @@ others is theatre — see §3 cross-cutting.
 | B5 | Biometric — voice / gait / typing | "voice memo attached", "fingerprint scan failed three times" | Re-identification across services; the metadata is the leak, not the content | hard (not text-level usually) | A or new |
 | B6 | Purchase patterns / shopping | "Rewe gestern 87 €, Amazon zwei Pakete heute" | Profile-builder; spending behaviour leaks lifestyle | medium | A |
 | B7 | Device / browser / IP / serial / MAC / IMEI fingerprint | "home IP 84.137.x.x", "Safari Mac M5", "MAC 88:e9:fe:5a:21:34", "IMEI 359872044123456", "iPhone serial F2LXG3HKMD60" | Cross-session linkability outside the LLM context; HIPAA-listed identifier in medical-device contexts | easy (regex per format) | B |
-| B8 | Calendar regularity | "Mittwoch immer 14:00 Therapeutin" | Combines B3 and a Tier-A category — *structural* leak even if each cell tokenised | hard | A+cat |
+| B8 | Calendar regularity | "Mittwoch immer 14:00 Therapeutin" | Combines B3 and a Tier-A category — *structural* leak even if each cell masked | hard | A+cat |
 | B9 | Vehicle identifiers — VIN, Kennzeichen / license plate | "Kennzeichen B-AB 1234", "VIN 1HGCM82633A123456", "rental car 4-AB-CD reservation" | Physical-world tracking; DMV / insurance correlation; HIPAA-listed identifier | easy (regex per jurisdiction) | A |
 
 ### 2.9 Relationship-network info
@@ -355,7 +355,7 @@ plus 5 third-party pattern rows in §2.10 as cross-cutting tags
 ### 3.1 Categorical-only leakage is the design problem this taxonomy reveals
 
 The three-tier model (A/B/C) is built around the question *"what
-happens to the value?"* — reversibly tokenise (A), tokenise with
+happens to the value?"* — reversibly mask (A), mask with
 boundary resolution (B), or opaquely redact (C). What the taxonomy
 makes visible is a fourth question the current tier model does not
 answer: *"what happens to the **category**?"*
@@ -397,7 +397,7 @@ them, in increasing order of intrusiveness:
 2. **Topic-tagged placeholder, with category visible** —
    `<MEDICAL_1>`. The LLM can still produce on-topic help ("for
    medications like this, common questions are…") but the *category*
-   is leaked. Same privacy as today's tokenisation; honest about it.
+   is leaked. Same privacy as today's masking; honest about it.
 3. **Rewrite-and-summarise** — instead of substitution, the local
    filter sends a paraphrase: "User has a question about long-term
    medication management." Significant utility loss; complete category
@@ -421,7 +421,7 @@ abstractly about `<PERSON_1>` and the user gets the restored output
 without losing meaning.
 
 It works *poorly* for rows where the value carries semantic weight
-the LLM needs to reason correctly. Examples where tokenising
+the LLM needs to reason correctly. Examples where masking
 *degrades the answer*, not just hides the value:
 
 - Medication-specific advice: "Can I drink wine with `<MEDICATION_1>`?"
@@ -441,15 +441,15 @@ asks the user to decide defaults.
 
 The taxonomy contains several rows that are individually weak signals
 but combine to a uniquely identifying profile even after every value
-is tokenised. The canonical examples:
+is masked. The canonical examples:
 
 - B1 home postcode + B2 work postcode + B3 commute pattern + R5
   child-school = a profile of <50 people in a large city; <5 in a
-  small one. Even with all four tokenised, the *pattern of having
+  small one. Even with all four masked, the *pattern of having
   exactly those four things* leaks.
 - H4 (therapy regularity) + B8 (weekly calendar entry) + H7
   (specialist Fachrichtung) = "user has weekly psychotherapy at the
-  same clinic" — survives tokenisation as a structural signal.
+  same clinic" — survives masking as a structural signal.
 - F1 salary + B1 postcode + I2 national origin = census-grade
   identifier across many cities.
 
@@ -594,7 +594,7 @@ get the attention they need without blocking the fixture-corpus work
 
 ### 5.1 — Categorical handling [DECIDED: opaque; token shape refined apf-0uo 2026-05-19]
 
-Default tokenisation is **opaque** (`<REF_1>`, `<REF_2>` …), not
+Default masking is **opaque** (`<REF_1>`, `<REF_2>` …), not
 categorical. The supposed utility benefit of `<MEDICATION_1>` is moot
 once chat-as-confidant is out of scope (§0): in assistant-agent flows
 the LLM doesn't need to reason about the value semantically, it just
@@ -624,7 +624,7 @@ itself. Tracked separately.
 Refusing to forward messages containing third-party identifiers would
 break the assistant use case (every email mentions someone). The
 filter treats third-party data as the user's for the purpose of
-tokenisation, **with two clarifications**:
+masking, **with two clarifications**:
 
 1. **Third-party identifiers are always opaque** (Tier-A with
    orthogonal `third_party=True` attribute on the Span), never
@@ -690,7 +690,7 @@ client wants to consume it, not antizipativ.
 
 Whether categories like asylum status (L6), domestic abuse (S10),
 whistleblower intent (P8), undocumented-immigration status (L5) should
-**never** leave the machine, regardless of tokenisation. v1 (refuse +
+**never** leave the machine, regardless of masking. v1 (refuse +
 surface 422) ships in `apf/local_only.py`. v2 (route silently to local
 model) was the original aspiration but defers on three prerequisites:
 detector emits the labels, local-model dependency declared, agent-harness

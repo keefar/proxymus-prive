@@ -2,9 +2,9 @@
 
 Uses FastAPI TestClient + a monkey-patched httpx upstream. Verifies:
 
-1. Outbound tokenisation: the upstream-mock receives the tokenised body,
+1. Outbound masking: the upstream-mock receives the masked body,
    not the raw user PII.
-2. Inbound detokenisation: the response body returned to the test client
+2. Inbound unmasking: the response body returned to the test client
    has tokens swapped for their originals.
 3. Tool-use resolution: tool_use.input is resolved at the boundary,
    so the client receives the real values to execute.
@@ -96,7 +96,7 @@ def main() -> int:
         # know which <REF_N> indices will be minted without having
         # seen the request first. Phase A populates the vault; phase B
         # crafts a response referencing the real vault tokens and verifies
-        # full detokenisation.
+        # full unmasking.
         print("\n=== Test 1: round-trip ===")
 
         # Phase A: stub fake, run a request to populate session-A vault.
@@ -136,14 +136,14 @@ def main() -> int:
             print(f"  body: {out_text!r}")
             sys.exit(1)
         if "<REF_" not in out_text:
-            print("FAIL  upstream body has no opaque tokens — detection or tokenisation broken")
+            print("FAIL  upstream body has no opaque tokens — detection or masking broken")
             print(f"  body: {out_text!r}")
             sys.exit(1)
-        print(f"  ok    upstream saw tokenised text:")
+        print(f"  ok    upstream saw masked text:")
         print(f"        {out_text!r}")
 
         # Phase B: build a fake response referencing the actual vault tokens
-        # and verify that text + tool_use both detokenise back to originals.
+        # and verify that text + tool_use both unmask back to originals.
         vault = proxy._VAULTS["session-A"]
         by_orig = {e.original: e for e in vault.all_entries()}
         anna = by_orig["Anna"].token
@@ -183,7 +183,7 @@ def main() -> int:
         if "Anna" not in assistant_text or "Freitag" not in assistant_text:
             print(f"FAIL  client response did not restore originals: {assistant_text!r}")
             sys.exit(1)
-        print(f"  ok    client saw detokenised response:")
+        print(f"  ok    client saw unmasked response:")
         print(f"        {assistant_text!r}")
 
         tool_input = client_body["content"][1]["input"]
@@ -221,7 +221,7 @@ def main() -> int:
         )
         assert_eq(resp2.status_code, 200, "status 200")
         out_text_2 = fake.last_request_body["messages"][0]["content"][0]["text"]
-        # The email should have been tokenised, and crucially: the token
+        # The email should have been masked, and crucially: the token
         # should match what was used in Test 1 (same session).
         # We can verify by checking session-A vault has one EMAIL entry.
         vault = proxy._VAULTS["session-A"]
@@ -322,7 +322,7 @@ def main() -> int:
 
         # Test 4d: bypass mechanic (apf-qzc)
         print("\n=== Test 4d: bypass — inline !raw + session whitelist ===")
-        # Sub-test 1: inline marker passes a value through untokenised
+        # Sub-test 1: inline marker passes a value through unmasked
         fake.next_response = {
             "id": "msg_bp", "type": "message", "role": "assistant",
             "content": [{"type": "text", "text": "ok"}],
@@ -334,7 +334,7 @@ def main() -> int:
                 "model": "claude-opus-4-7", "max_tokens": 256,
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text":
-                     "ping !raw public-alias@example.com and tokenise "
+                     "ping !raw public-alias@example.com and mask "
                      "secret@example.com please"}]}]
             },
             headers={"x-api-key": "test-key", "x-apf-session": "session-BP"},
@@ -349,7 +349,7 @@ def main() -> int:
         if "!raw" in out_bp:
             print(f"FAIL  marker '!raw' was not stripped: {out_bp!r}")
             sys.exit(1)
-        print(f"  ok    inline !raw: pass-through value + tokenise rest")
+        print(f"  ok    inline !raw: pass-through value + mask rest")
         print(f"        upstream saw: {out_bp!r}")
 
         # Sub-test 2: whitelist endpoint sets persistent bypass
@@ -375,9 +375,9 @@ def main() -> int:
         # Whitelisted values must survive…
         for keep in ("openly-known-email@me.de",):
             if keep not in out_wl:
-                print(f"FAIL  whitelisted value tokenised: {keep!r} missing from {out_wl!r}")
+                print(f"FAIL  whitelisted value masked: {keep!r} missing from {out_wl!r}")
                 sys.exit(1)
-        # …non-whitelisted PII must still be tokenised
+        # …non-whitelisted PII must still be masked
         if "thomas.weber@example.de" in out_wl:
             print(f"FAIL  non-whitelisted email leaked: {out_wl!r}")
             sys.exit(1)
@@ -549,9 +549,9 @@ def main() -> int:
         if "<REF_" not in user_text:
             print(f"FAIL  no opaque tokens in upstream body: {user_text!r}")
             sys.exit(1)
-        print(f"  ok    OpenAI upstream saw tokenised: {user_text!r}")
+        print(f"  ok    OpenAI upstream saw masked: {user_text!r}")
 
-        # Phase B: response detokenises
+        # Phase B: response unmasks
         vault_oai = proxy._VAULTS["oai-session-A"]
         by_orig = {e.original: e for e in vault_oai.all_entries()}
         anna_t = by_orig["Anna"].token
@@ -592,7 +592,7 @@ def main() -> int:
         assert_eq(resp_oai.status_code, 200, "OpenAI roundtrip status 200")
         oai_msg = resp_oai.json()["choices"][0]["message"]
         if "<REF_" in oai_msg["content"]:
-            print(f"FAIL  client text not detokenised: {oai_msg['content']!r}")
+            print(f"FAIL  client text not unmasked: {oai_msg['content']!r}")
             sys.exit(1)
         if "thomas.weber@example.de" not in oai_msg["content"]:
             print(f"FAIL  email not restored in text: {oai_msg['content']!r}")
@@ -601,7 +601,7 @@ def main() -> int:
         if tc_args["to"] != "thomas.weber@example.de" or tc_args["name"] != "Anna":
             print(f"FAIL  tool_call arguments not resolved: {tc_args!r}")
             sys.exit(1)
-        print(f"  ok    OpenAI client saw detokenised text + resolved tool_call")
+        print(f"  ok    OpenAI client saw unmasked text + resolved tool_call")
 
     print("\nALL TESTS PASSED")
     return 0

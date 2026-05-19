@@ -2,7 +2,7 @@
 
 Wie der PoC-Proxy mit Claude Code (oder einem anderen Anthropic-API-Client)
 verbunden wird. Nach diesem Setup laufen alle Anfragen durch den Filter:
-PII wird vor dem Versand zur Cloud tokenisiert, in der Antwort wieder
+PII wird vor dem Versand zur Cloud maskiert, in der Antwort wieder
 zurückgesetzt, Tier-C-Secrets bleiben dem LLM gegenüber opak und werden
 am Tool-Call-Boundary aus dem lokalen Env / Vault wieder eingesetzt.
 
@@ -55,7 +55,7 @@ claude
 Wenn alles korrekt verbunden ist, sollte Claude Code normal antworten,
 aber:
 
-- Alle ausgehenden Texte mit erkannter PII werden tokenisiert (sichtbar
+- Alle ausgehenden Texte mit erkannter PII werden maskiert (sichtbar
   in den Proxy-Logs, falls `--log-level debug`).
 - Der `x-apf-session`-Header wird auf jede Antwort gesetzt — Claude Code
   ignoriert ihn momentan, aber die Vault-State bleibt sauber per Session.
@@ -65,7 +65,7 @@ aber:
 ## Smoke-Helper: manueller End-to-End-Check
 
 `apf/manual_smoke.py` startet den Proxy, schickt eine Test-Anfrage mit
-PII-haltigem Inhalt, und meldet, ob die Tokenisierung sichtbar wurde
+PII-haltigem Inhalt, und meldet, ob die Maskierung sichtbar wurde
 beim Upstream. Setze einen Mock-Upstream oder zeige es kurz gegen einen
 echten Anthropic-Endpoint.
 
@@ -96,7 +96,7 @@ Hermes Agent (CLI) ──▶ apf:8765 ──▶ oMLX:8000 ──▶ MLX-Modell
 Per Default klassifiziert apf `127.0.0.1` als **trusted local engine**
 (`POLICY_OFF` — keine Filterung; Begründung in
 `apf/endpoint_policy.py`). Das ist für Production sinnvoll (lokale
-Modelle brauchen keine Tokenisierung), aber **bricht den Test-Use-Case**
+Modelle brauchen keine Maskierung), aber **bricht den Test-Use-Case**
 — wenn du gegen ein lokales oMLX testen willst, *willst* du dass apf
 filtert. Konfig-Override anlegen:
 
@@ -180,20 +180,20 @@ siehe bd `apf-6l8`).
   bleiben ungesetzt (Tool muss explizit fehlschlagen statt einen Wert
   einzusetzen den der Vault gesehen hat).
 
-- **System-Prompt-Tokenisierung (apf-lnr):** Default ist OFF —
+- **System-Prompt-Maskierung (apf-lnr):** Default ist OFF —
   `role=system` Messages (Anthropic `system`-Feld + OpenAI `messages[0]`
-  mit `role=system`) werden **nicht** tokenisiert. Begründung: control-plane
+  mit `role=system`) werden **nicht** maskiert. Begründung: control-plane
   Prompts (Filter-Explainer, Agent-Persönlichkeit, Tool-Schemata) sind
   meist PII-frei und würden ansonsten als false-positive-Baseline in
   jedem Vault-Summary auftauchen. Wenn dein System-Prompt legitim
-  User-PII enthält (z.B. user-profile-fed Agents), `APF_TOKENISE_SYSTEM=1`
-  setzen — dann läuft die Tokenisierung wie für andere Rollen auch.
+  User-PII enthält (z.B. user-profile-fed Agents), `APF_MASK_SYSTEM=1`
+  setzen — dann läuft die Maskierung wie für andere Rollen auch.
   Locked-Category-Refusal (apf-enr) prüft System-Messages **unabhängig**
   vom Flag, der Safety-Net für Never-Forward-Kategorien bleibt aktiv.
 
-- **Detokenizer-Marker (apf-b3j, Debug):** `APF_DETOKENIZE_MARKER`
-  hängt jedem vom Detokenizer *tatsächlich* zurückaufgelösten Wert einen
-  Marker an — `APF_DETOKENIZE_MARKER=✓` macht aus „anna müller" →
+- **Unmasker-Marker (apf-b3j, Debug):** `APF_UNMASK_MARKER`
+  hängt jedem vom Unmasker *tatsächlich* zurückaufgelösten Wert einen
+  Marker an — `APF_UNMASK_MARKER=✓` macht aus „anna müller" →
   „anna müller✓". So sieht man im Test, ob der Round-Trip wirklich
   stattfand oder ob ein Wert nur unmaskiert durchgerutscht ist (optisch
   sonst identisch). Nur für Test/Debug — **nie in Produktion** (verändert
@@ -218,7 +218,7 @@ siehe bd `apf-6l8`).
   stimmt nicht. `curl http://127.0.0.1:8765/healthz` testen.
 - **"401 Unauthorized" vom Upstream:** API-Key fehlt oder ist falsch.
   Der Proxy selbst hat keinen Key, er reicht den Client-Header durch.
-- **PII kommt durch ohne Tokenisierung:** Detector hat sie verfehlt.
+- **PII kommt durch ohne Maskierung:** Detector hat sie verfehlt.
   `GET /v1/sessions/{id}/uncertain` zeigt was als low-confidence
   markiert wurde. Für eindeutige Misses: in `docs/MODEL-EVALUATION.md`
   schauen, ggf. Tier-C-Regex / GLiNER-Labels erweitern.

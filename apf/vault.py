@@ -70,7 +70,7 @@ class Vault:
         # single session-global counter for Tier A/B opaque tokens
         self._ref_counter: int = 0
         # User-declared bypass values (per apf-qzc). Spans matching any of
-        # these are NOT tokenised — the original passes through to the LLM.
+        # these are NOT masked — the original passes through to the LLM.
         # Populated by inline `!raw VALUE` markers and the
         # POST /v1/sessions/{id}/whitelist endpoint.
         self._whitelist: set[str] = set()

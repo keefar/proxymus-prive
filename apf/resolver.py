@@ -8,11 +8,11 @@ their originals.
 
 Critical: the resolved arguments MUST NOT be sent back into the LLM's
 context. The contract is:
-  1. LLM emits tool_use with tokenised args.
+  1. LLM emits tool_use with masked args.
   2. Local harness calls `resolve_tool_call_args(args, vault)` →
      plain-text args (originals).
   3. Local executor runs the tool with the plain-text args.
-  4. The tool result is *re-tokenised* before being sent back to the LLM
+  4. The tool result is *re-masked* before being sent back to the LLM
      in the next turn (using the same vault, so token identities stay
      consistent).
 
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from .detokenizer import TOKEN_RE
+from .unmasker import TOKEN_RE
 from .vault import Vault
 
 SecretResolver = Callable[[], str | None]

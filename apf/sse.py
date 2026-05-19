@@ -1,7 +1,7 @@
 """SSE rewriter for Anthropic Messages API streaming responses.
 
 The challenge: tokens like `<REF_1>` may straddle SSE chunk boundaries
-(`<R` in one chunk, `EF_1>` in the next). Detokenising each chunk
+(`<R` in one chunk, `EF_1>` in the next). Unmasking each chunk
 independently would corrupt them. Solution: a small per-content-block
 text buffer that holds back any partial-token tail.
 
@@ -18,7 +18,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from .detokenizer import detokenize_text
+from .unmasker import unmask_text
 from .resolver import resolve_tool_call_args
 from .vault import Vault
 
@@ -76,8 +76,8 @@ class SSERewriter:
         self.secret_resolver = secret_resolver
         self.blocks: dict[int, _BlockState] = {}
 
-    def _detokenise(self, text: str) -> str:
-        return detokenize_text(text, self.vault)
+    def _unmask(self, text: str) -> str:
+        return unmask_text(text, self.vault)
 
     def feed(self, event_type: str, data: dict) -> list[tuple[str, dict]]:
         """Consume one SSE event, emit zero or more rewritten events."""
@@ -120,7 +120,7 @@ class SSERewriter:
                 block.pending_text = held
                 if safe:
                     new_data = {**data, "delta": {"type": "text_delta",
-                                                   "text": self._detokenise(safe)}}
+                                                   "text": self._unmask(safe)}}
                     out.append((event_type, new_data))
                 # If nothing safe yet, emit nothing — wait for more.
 
@@ -143,7 +143,7 @@ class SSERewriter:
             if block.kind == "text":
                 # Flush any pending text (it's not the start of a token after all).
                 if block.pending_text:
-                    flush_text = self._detokenise(block.pending_text)
+                    flush_text = self._unmask(block.pending_text)
                     if flush_text:
                         out.append(("content_block_delta", {
                             "type": "content_block_delta", "index": idx,
@@ -165,9 +165,9 @@ class SSERewriter:
                         )
                         resolved_json = json.dumps(resolved, ensure_ascii=False)
                     except json.JSONDecodeError:
-                        # Couldn't parse — best we can do is detokenise the
+                        # Couldn't parse — best we can do is unmask the
                         # raw JSON string.
-                        resolved_json = self._detokenise(block.tool_input_json)
+                        resolved_json = self._unmask(block.tool_input_json)
                 if resolved_json:
                     out.append(("content_block_delta", {
                         "type": "content_block_delta", "index": idx,
@@ -194,7 +194,7 @@ class SSERewriter:
         out: list[tuple[str, dict]] = []
         for idx, block in self.blocks.items():
             if block.kind == "text" and block.pending_text:
-                flush_text = self._detokenise(block.pending_text)
+                flush_text = self._unmask(block.pending_text)
                 if flush_text:
                     out.append(("content_block_delta", {
                         "type": "content_block_delta", "index": idx,

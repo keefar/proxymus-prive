@@ -1,6 +1,6 @@
 """apf-nia: cloud-smoke that routes a PII-laden prompt through the apf
 proxy to api.anthropic.com and reports what Claude does with the
-tokenised `<REF_N>` markers.
+masked `<REF_N>` markers.
 
 This is the actual production validation the PoC was building toward:
 the local Qwen-refusal experiments in apf-6l8 do NOT predict cloud-
@@ -26,7 +26,7 @@ Usage
     .venv/bin/python -m scripts.cloud_smoke --model claude-sonnet-4-6
     .venv/bin/python -m scripts.cloud_smoke --no-auth-warn
 
-Output: per-case report showing what apf tokenised (vault summary via
+Output: per-case report showing what apf masked (vault summary via
 the status endpoint), what Claude responded with (truncated preview),
 and whether the response shows safety-refusal patterns ('I cannot…',
 'I'm sorry', 'sensitive information') or engages with the tokens.

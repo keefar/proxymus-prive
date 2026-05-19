@@ -2,12 +2,12 @@
 
 ORG is opt-out by default (public-company mentions in coding-agent
 prompts aren't user-PII and masking them breaks the prompt). Verifies
-the skip filter in proxy._tokenise_text.
+the skip filter in proxy._mask_text.
 """
 from __future__ import annotations
 
 import apf.proxy as proxy
-from apf.tokenizer import Span
+from apf.masker import Span
 from apf.vault import Vault
 
 
@@ -33,7 +33,7 @@ def test_org_skipped_by_default(monkeypatch) -> None:
     _install_detector(monkeypatch)
     monkeypatch.setattr(proxy, "SKIP_LABELS", frozenset({"ORG"}))
     vault = Vault()
-    out = proxy._tokenise_text("ANNA works at ACME", vault)
+    out = proxy._mask_text("ANNA works at ACME", vault)
     assert "ACME" in out, "ORG value must pass through raw by default"
     assert "ANNA" not in out, "PERSON must still be masked"
     assert "<REF_" in out
@@ -45,7 +45,7 @@ def test_org_masked_when_skip_labels_cleared(monkeypatch) -> None:
     _install_detector(monkeypatch)
     monkeypatch.setattr(proxy, "SKIP_LABELS", frozenset())
     vault = Vault()
-    out = proxy._tokenise_text("ANNA works at ACME", vault)
+    out = proxy._mask_text("ANNA works at ACME", vault)
     assert "ACME" not in out, "with SKIP_LABELS empty, ORG is masked too"
     assert "ANNA" not in out
     assert any(e.label == "ORG" for e in vault.all_entries())

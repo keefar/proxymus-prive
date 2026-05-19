@@ -2,7 +2,7 @@
 
 The proxy decides whether to filter a request based on the upstream host:
 
-- `full`  — tokenise everything (default for unknown / cloud hosts)
+- `full`  — mask everything (default for unknown / cloud hosts)
 - `off`   — pass through raw (default for local engines and explicit
             user-trusted endpoints)
 - `categorical-only` — reserved for future audited no-log endpoints

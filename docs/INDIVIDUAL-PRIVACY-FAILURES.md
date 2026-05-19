@@ -43,7 +43,7 @@ Phase 1 suggested merging quasi-identifier triangulation (IPF-02) and
 inferential disclosure (IPF-06). They share a "combination > sum of parts"
 shape but split on *what* is re-identified: IPF-02 joins multiple *identity
 fields* to identify a *person*; IPF-06 leaks a sensitive *category or
-value* from the *context around a single tokenised span*. The mitigations
+value* from the *context around a single masked span*. The mitigations
 also split: IPF-02 needs cross-turn profile-awareness, IPF-06 needs opaque
 tokens plus paraphrase/local-only. Kept separate, with cross-reference.
 
@@ -89,7 +89,7 @@ distorts who the person is now). Lee 2024 → *Secondary Use*, *Disclosure*,
 **apf taxonomy mapping.** Cuts across most `+cat` rows — H3, H4, P1,
 P6, Su1, Su3, S6.
 
-**Mitigation in apf.** Tokenisation shrinks the verbatim surface but
+**Mitigation in apf.** Masking shrinks the verbatim surface but
 not the categorical retention shape. §5.1 opaque tokens block the
 cascade-leak; `/apf-reset` shortens what any one session carries.
 Local-only routing (§5.6, deferred) is the clean fix for the most
@@ -134,7 +134,7 @@ same. Danger lives in the *combination*, not the items.
 rows. §3.3 (profile assembly) of the threat-model is the apf-side
 acknowledgement.
 
-**Mitigation in apf.** Per-value tokenisation is necessary but
+**Mitigation in apf.** Per-value masking is necessary but
 insufficient — the *structural* leak survives substitution. §5.4
 diversity-weighted cumulative-profile warning is the direct
 mitigation; `/apf-reset` the escape. Routing high-diversity sessions
@@ -179,7 +179,7 @@ under a confidence norm), *Disclosure*, *Aggregation*. Lee 2024 →
 **apf taxonomy mapping.** Entire §2.10 (5 rows) plus all `A-3p`-tagged
 rows (R1–R6, S3, S4, F7, H12, H13).
 
-**Mitigation in apf.** §5.2: tokenise 3p spans as always-opaque
+**Mitigation in apf.** §5.2: mask 3p spans as always-opaque
 (`<PERSON_3p_1>`, never categorical), mark with `third_party=True`
 attribute. Honest framing in README: filter minimises *leakage*, does
 not solve the underlying consent problem. IPF-10 (bystander) is the
@@ -272,7 +272,7 @@ Accessibility*. Lee 2024 → *Identification*, *Aggregation*.
 **apf taxonomy mapping.** B7, all of §2.7, plus R-rows when others'
 cross-platform identities are disclosed.
 
-**Mitigation in apf.** Per-session tokenisation handles single-context
+**Mitigation in apf.** Per-session masking handles single-context
 identifiers. Cross-context stitching needs *per-persona* token scoping
 within a session — a deferred design hook. Today's vault is per-session,
 not per-persona.
@@ -281,11 +281,11 @@ not per-persona.
 
 ### IPF-06 — Inferential disclosure (cascade-leak via category-laden context)
 
-**Kernel.** Even with the *value* tokenised, surrounding text lets a
+**Kernel.** Even with the *value* masked, surrounding text lets a
 reader recover the category — and often the value — by inference.
 
 **Description.** Distinct from IPF-02 (joining identity fields). This IPF
-is a *single tokenised span* whose context betrays what was redacted.
+is a *single masked span* whose context betrays what was redacted.
 "Has `<MEDICATION_1>` made your sleep worse?" recovers "psychiatric
 medication". "Termin bei Dr. `<PERSON_2>` in der `<ORG_1>` — Onkologie
 14:00" recovers oncology. The adversary need not know the literal value;
@@ -302,7 +302,7 @@ case (model performs inference on multimodal cues).
 - Sender: user.
 - Recipient: provider; the inferring agent is the receiving model.
 - Subject: user (or third party).
-- Information type: tokenised value embedded in semantically rich
+- Information type: masked value embedded in semantically rich
   surrounding text.
 - Transmission principle: user believes "value hidden"; actual flow
   "category recoverable". Violation = gap between perceived and
@@ -365,7 +365,7 @@ a model, the user lacks resources for legal challenge.
 **apf taxonomy mapping.** L5, L6, P1, P3, P7, P8 most acutely; in the
 limit any row if the downstream recipient is sufficiently powerful.
 
-**Mitigation in apf.** Tokenisation shrinks value-set; doesn't change
+**Mitigation in apf.** Masking shrinks value-set; doesn't change
 *that* the user used an LLM on these topics — metadata alone suffices
 for the worst inferences. Honest mitigation is **local-only routing**
 for the hardest categories (§5.6, deferred). Until then: explicit
@@ -457,7 +457,7 @@ model versions may emit content verbatim to other users.
 intervention that doesn't depend on the provider's continued
 discipline."
 
-**Mitigation in apf.** Tokenisation eliminates value-level
+**Mitigation in apf.** Masking eliminates value-level
 extractability for substituted spans. Surrounding category-laden
 context (cf. IPF-06) is residual; opaque tokens (§5.1) minimise it.
 Hardest case is verbatim copy-paste of long structured documents —
@@ -470,7 +470,7 @@ filter must catch the full structure.
 **Kernel.** The user's privacy is compromised by other people's opsec —
 chats forwarded, screenshots shared, exports posted on social media.
 
-**Description.** User themselves takes care: tokenises, uses local
+**Description.** User themselves takes care: masks, uses local
 models for sensitive topics. Their counterparties — coworker, ex,
 family member, clinician using their own AI — do not. Notes shared in
 confidence get pasted into those people's LLM sessions, forwarded into
@@ -559,7 +559,7 @@ names a gap rather than a covered row.
 mitigation is **scope restraint**: filter inspects text; multimodal
 sidechannels (audio, image, video, biometrics) need separate hooks,
 currently out of scope. Docs must name this gap so users don't assume
-text-tokenisation extends to other modalities. Future: per-modality
+text-masking extends to other modalities. Future: per-modality
 routing in the endpoint trust map (§5.8).
 
 ---
@@ -576,15 +576,15 @@ different layers:
 | Temporal asymmetry | IPF-01, IPF-04, IPF-08, IPF-09 | Session boundaries, opaque tokens, endpoint rotation (future) |
 | Joining / linkage | IPF-02, IPF-05 | Per-session namespaces, profile-aggregation warning, per-persona vault (future) |
 | Inferential leak around tokens | IPF-06, IPF-11 | Opaque tokens (one path), local-only routing (rest, deferred), scope restraint for multimodal |
-| Consent-of-others / asymmetry | IPF-03, IPF-07, IPF-10 | 3p-attribute tokenisation, honest docs about limits, ecosystem advocacy |
+| Consent-of-others / asymmetry | IPF-03, IPF-07, IPF-10 | 3p-attribute masking, honest docs about limits, ecosystem advocacy |
 
 This regrouping is more useful than the IPF list itself when asking
 whether a proposed feature buys real protection — a change that only
 addresses one cluster leaves the other three exposed.
 
-### 2.2 What tokenisation alone cannot fix
+### 2.2 What masking alone cannot fix
 
-Five of eleven IPFs are *not* solvable by tokenisation alone: IPF-04
+Five of eleven IPFs are *not* solvable by masking alone: IPF-04
 (longitudinal volume isn't shrunk by substitution), IPF-06 (context
 around the token leaks the category), IPF-07 (the *fact* the user
 used an LLM on topic X is itself the signal), IPF-10 (happens on
@@ -619,7 +619,7 @@ IPF-11 and parts of IPF-05 / IPF-10 surface a clean limitation: apf is
 *text-only*. Voice memos, profile images, screen-share streams,
 behavioural-biometric sidechannels are all out of scope. The project
 should *name* this perimeter in docs rather than letting users assume
-text-tokenisation extends to other modalities. Future architecture can
+text-masking extends to other modalities. Future architecture can
 hook per-modality routing via the endpoint-trust map (§5.8), but v1
 should make the gap explicit.
 

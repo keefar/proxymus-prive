@@ -3,7 +3,7 @@
 ## Why this exists
 
 Privacy filtering trades information against utility. A filter that
-tokenises everything reaches recall 1.0 trivially but makes the
+masks everything reaches recall 1.0 trivially but makes the
 assistant agent useless. A filter that lets too much through is a
 leak. The trade-off needs a *measurement* layer — not a feeling — and
 that measurement is what this document defines (apf-00s).
@@ -32,7 +32,7 @@ For each fixture in `fixtures/private/private.jsonl`:
 
 2. **Run twice per fixture**:
    - **Control**: agent sees the original fixture text (no filtering).
-   - **Treatment**: agent sees the tokenised text (filter applied with
+   - **Treatment**: agent sees the masked text (filter applied with
      v1 settings — opaque tokens, eager defaults).
 
 3. **Score both runs** with the same rubric. Comparison gives the

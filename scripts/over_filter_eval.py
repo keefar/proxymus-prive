@@ -1,7 +1,7 @@
 """Over-filter evaluation harness (apf-00s scaffold).
 
 Methodology lives in docs/OVER-FILTER-EVAL.md. This file implements the
-pair-eval pipeline: per fixture, run agent on (original | tokenised),
+pair-eval pipeline: per fixture, run agent on (original | masked),
 score with a judge, aggregate.
 
 The judge is API-pluggable. The default `StubJudge` returns
@@ -176,10 +176,10 @@ def evaluate(
         if not tasks:
             continue
         original = fix["text"]
-        tokenised = apply_v1_filter(original, fix.get("spans", []))
+        masked = apply_v1_filter(original, fix.get("spans", []))
         for task in tasks:
             ctrl = Run(fid, "control", task, original, agent(original, task))
-            trt = Run(fid, "treatment", task, tokenised, agent(tokenised, task))
+            trt = Run(fid, "treatment", task, masked, agent(masked, task))
             r_ctrl = judge(ctrl)
             r_trt = judge(trt)
             rows.append({

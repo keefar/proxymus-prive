@@ -2,7 +2,7 @@
 
 Sends a curated set of single-turn prompts through apf, then reads the
 per-session vault summary via /v1/sessions/{id}/status to verify
-tokenisation behaviour. Inspects only counts (the status endpoint never
+masking behaviour. Inspects only counts (the status endpoint never
 returns originals or tokens), so the script is safe to run unattended
 and to commit example outputs from.
 

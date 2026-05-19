@@ -1,4 +1,4 @@
-"""End-to-end demo: detector → tokenize → simulated LLM round-trip → restore.
+"""End-to-end demo: detector → mask → simulated LLM round-trip → restore.
 
 Usage:
     .venv/bin/python -m apf.demo
@@ -6,7 +6,7 @@ Usage:
 
 Without --text, runs over a handful of representative fixtures and shows
 before/after, the vault contents, a simulated tool-call resolution, and a
-simulated response detokenisation.
+simulated response unmasking.
 
 This is a development demo, not the production runtime. The real
 integration point will be the FastAPI proxy or an in-process detector
@@ -18,8 +18,8 @@ import argparse
 import json
 from pathlib import Path
 
-from .tokenizer import Span, tokenize_text
-from .detokenizer import detokenize_text
+from .masker import Span, mask_text
+from .unmasker import unmask_text
 from .resolver import resolve_tool_call_args
 from .vault import Vault
 
@@ -53,9 +53,9 @@ def demo_round_trip(text: str, detector) -> None:
 
     vault = Vault()
     spans = detect_spans(detector, text)
-    tokenised = tokenize_text(text, spans, vault)
+    masked = mask_text(text, spans, vault)
 
-    show(f"Tokenised ({len(vault)} vault entries)", tokenised)
+    show(f"Masked ({len(vault)} vault entries)", masked)
 
     # Show the vault.
     print("\n── Vault ──────────────────")
@@ -63,10 +63,10 @@ def demo_round_trip(text: str, detector) -> None:
         suffix = "  [SECRET — opaque to LLM]" if entry.tier == "C" else ""
         print(f"  {entry.token:24s} ← {entry.original!r}{suffix}")
 
-    # Simulate an LLM that reasons about the tokenised text and emits a
+    # Simulate an LLM that reasons about the masked text and emits a
     # tool call referencing some of the tokens.
     fake_tool_call_args = {
-        "command": tokenised,  # whole tokenised text as a "search query"
+        "command": masked,  # whole masked text as a "search query"
         "to": next((e.token for e in vault.all_entries()
                     if e.label == "EMAIL"), "no-email@example.com"),
         "options": {"max_results": 5, "include_secrets": False},
@@ -82,14 +82,14 @@ def demo_round_trip(text: str, detector) -> None:
          json.dumps(resolved, indent=2, ensure_ascii=False))
 
     # Simulate an LLM response that references the same tokens — what the
-    # user sees after detokenisation.
+    # user sees after unmasking.
     fake_response = (
         f"Ich habe die Email an {fake_tool_call_args['to']} verschickt. "
         f"Der Termin bleibt bei "
         f"{next((e.token for e in vault.all_entries() if e.label == 'DATE'), '?')}."
     )
     show("Simulated LLM response (tokens)", fake_response)
-    show("Detokenised for user", detokenize_text(fake_response, vault))
+    show("Unmasked for user", unmask_text(fake_response, vault))
 
 
 def main() -> int:

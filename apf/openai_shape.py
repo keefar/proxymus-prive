@@ -29,23 +29,23 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from .detokenizer import detokenize_text
+from .unmasker import unmask_text
 from .resolver import resolve_tool_call_args
-from .tokenizer import Span, tokenize_text
+from .masker import Span, mask_text
 from .vault import Vault
 
 
 # ── Request walker (client → upstream) ────────────────────────────────────
 
-def tokenise_request(
-    body: dict, vault: Vault, tokeniser_fn, tokenise_system: bool = False,
+def mask_request(
+    body: dict, vault: Vault, masker_fn, mask_system: bool = False,
 ) -> dict:
-    """Walk an OpenAI Chat Completions request body and tokenise text
-    surfaces. tokeniser_fn is the callback used by the proxy
-    (apf.proxy._tokenise_text) so all the inline-bypass and detector
+    """Walk an OpenAI Chat Completions request body and mask text
+    surfaces. masker_fn is the callback used by the proxy
+    (apf.proxy._mask_text) so all the inline-bypass and detector
     plumbing applies uniformly.
 
-    tokenise_system controls whether role=system messages are tokenised
+    mask_system controls whether role=system messages are masked
     (apf-lnr). Default False: control-plane system prompts (filter explainer,
     agent personality) leak no false-positive vault entries. Pass True for
     setups whose system prompts legitimately carry user PII.
@@ -56,44 +56,44 @@ def tokenise_request(
         return out
     new_msgs: list[dict] = []
     for msg in msgs:
-        if not tokenise_system and msg.get("role") == "system":
+        if not mask_system and msg.get("role") == "system":
             new_msgs.append(msg)
             continue
-        new_msgs.append(_tokenise_message(msg, vault, tokeniser_fn))
+        new_msgs.append(_mask_message(msg, vault, masker_fn))
     out["messages"] = new_msgs
     return out
 
 
-def _tokenise_message(msg: dict, vault: Vault, tokeniser_fn) -> dict:
+def _mask_message(msg: dict, vault: Vault, masker_fn) -> dict:
     out = dict(msg)
     content = msg.get("content")
     if isinstance(content, str):
-        out["content"] = tokeniser_fn(content, vault)
+        out["content"] = masker_fn(content, vault)
     elif isinstance(content, list):
         new_parts: list = []
         for part in content:
             if isinstance(part, dict) and part.get("type") == "text":
                 new_parts.append({
-                    **part, "text": tokeniser_fn(part.get("text", ""), vault),
+                    **part, "text": masker_fn(part.get("text", ""), vault),
                 })
             else:
                 # image_url and other unknown part types pass through —
                 # apf doesn't claim to filter image content.
                 new_parts.append(part)
         out["content"] = new_parts
-    # Assistant tool_calls (in conversation history): tokenise the JSON
+    # Assistant tool_calls (in conversation history): mask the JSON
     # arguments. They were originally the LLM's output and have been
     # resolved already once on the way back, but if the conversation has
-    # been replayed through this turn they need tokenisation again.
+    # been replayed through this turn they need masking again.
     if isinstance(msg.get("tool_calls"), list):
         out["tool_calls"] = [
-            _tokenise_tool_call(tc, vault, tokeniser_fn)
+            _mask_tool_call(tc, vault, masker_fn)
             for tc in msg["tool_calls"]
         ]
     return out
 
 
-def _tokenise_tool_call(tc: dict, vault: Vault, tokeniser_fn) -> dict:
+def _mask_tool_call(tc: dict, vault: Vault, masker_fn) -> dict:
     out = dict(tc)
     fn = tc.get("function")
     if not isinstance(fn, dict):
@@ -105,18 +105,18 @@ def _tokenise_tool_call(tc: dict, vault: Vault, tokeniser_fn) -> dict:
         args = json.loads(args_raw)
     except json.JSONDecodeError:
         return out
-    walked = _walk_json_tokenise(args, vault, tokeniser_fn)
+    walked = _walk_json_mask(args, vault, masker_fn)
     out["function"] = {**fn, "arguments": json.dumps(walked, ensure_ascii=False)}
     return out
 
 
-def _walk_json_tokenise(value, vault: Vault, tokeniser_fn):
+def _walk_json_mask(value, vault: Vault, masker_fn):
     if isinstance(value, str):
-        return tokeniser_fn(value, vault)
+        return masker_fn(value, vault)
     if isinstance(value, list):
-        return [_walk_json_tokenise(v, vault, tokeniser_fn) for v in value]
+        return [_walk_json_mask(v, vault, masker_fn) for v in value]
     if isinstance(value, dict):
-        return {k: _walk_json_tokenise(v, vault, tokeniser_fn) for k, v in value.items()}
+        return {k: _walk_json_mask(v, vault, masker_fn) for k, v in value.items()}
     return value
 
 
@@ -147,8 +147,8 @@ def scan_request_for_locked(body: dict, scan_fn) -> list[str]:
 
 # ── Response walker (upstream → client) ───────────────────────────────────
 
-def detokenise_response(body: dict, vault: Vault, secret_resolver) -> dict:
-    """Walk an OpenAI Chat Completions response, detokenise text content
+def unmask_response(body: dict, vault: Vault, secret_resolver) -> dict:
+    """Walk an OpenAI Chat Completions response, unmask text content
     and resolve tool_call.function.arguments at the boundary."""
     out = dict(body)
     choices = body.get("choices")
@@ -156,18 +156,18 @@ def detokenise_response(body: dict, vault: Vault, secret_resolver) -> dict:
         return out
     new_choices: list[dict] = []
     for choice in choices:
-        new_choices.append(_detokenise_choice(choice, vault, secret_resolver))
+        new_choices.append(_unmask_choice(choice, vault, secret_resolver))
     out["choices"] = new_choices
     return out
 
 
-def _detokenise_choice(choice: dict, vault: Vault, secret_resolver) -> dict:
+def _unmask_choice(choice: dict, vault: Vault, secret_resolver) -> dict:
     out = dict(choice)
     msg = choice.get("message")
     if isinstance(msg, dict):
         new_msg = dict(msg)
         if isinstance(msg.get("content"), str):
-            new_msg["content"] = detokenize_text(msg["content"], vault)
+            new_msg["content"] = unmask_text(msg["content"], vault)
         if isinstance(msg.get("tool_calls"), list):
             new_msg["tool_calls"] = [
                 _resolve_tool_call(tc, vault, secret_resolver)
@@ -301,7 +301,7 @@ class OpenAISSERewriter:
             safe, held = _split_safe(combined)
             self.text_held[idx] = held
             if safe:
-                new_delta["content"] = detokenize_text(safe, self.vault)
+                new_delta["content"] = unmask_text(safe, self.vault)
             else:
                 # Nothing to emit yet — but we still emit an empty chunk
                 # to preserve the chunk count semantics? Skip the

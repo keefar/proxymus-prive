@@ -85,7 +85,7 @@ Von 10 PII-Stellen werden ~7 erkannt, ~3 entwischen. Aufgeschlüsselt für
 ### Precision 0.6 — heißt was?
 
 Von 10 als-PII-markierten Stellen sind ~6 wirklich PII, ~4 sind False
-Positives. Im Kontext eines reversiblen Tokenizers ist Über-Maskierung
+Positives. Im Kontext eines reversiblen Maskers ist Über-Maskierung
 *akzeptabel*: der Text geht durch die Pipeline, die Token werden im Tool-Call
 oder in der Antwort wieder zurückgesetzt — also keine Datenverluste, nur
 leichter Qualitätsverlust am LLM-Input. False Negatives (entwischte PII) sind

@@ -23,7 +23,7 @@ a worked integration scenario needs it.**
 
 `apf/local_only.py` exposes a label set (`DEFAULT_LOCKED_LABELS`, with
 `APF_LOCKED_LABELS` env override). `apf/proxy.py` runs a read-only scan
-BEFORE tokenisation: if any locked label is detected, the request gets
+BEFORE masking: if any locked label is detected, the request gets
 a 422 with a structured body listing the categories (no values). The
 locked values never enter the vault.
 

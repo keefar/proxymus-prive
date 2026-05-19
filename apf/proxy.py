@@ -4,19 +4,19 @@ Flow (non-streaming PoC):
 
     client (Claude Code) ──POST /v1/messages──▶ proxy
                                                    │
-                                                   ├── tokenise outbound text via detector
+                                                   ├── mask outbound text via detector
                                                    ├── vault stores originals
                                                    │
                                                    └─POST /v1/messages──▶ api.anthropic.com
                                                                             │
-    client ◀──── detokenised body ────── proxy ◀────── response ──────────┘
+    client ◀──── unmasked body ────── proxy ◀────── response ──────────┘
        │                                    │
        │                                    └── resolve tool_use args at boundary
        │                                        (Tier C via secret_resolver hook)
        │
        └── client executes tool_use with REAL values, returns tool_result
                   ▼
-            (next turn — proxy re-tokenises the tool_result)
+            (next turn — proxy re-masks the tool_result)
 
 Session model
 -------------
@@ -50,19 +50,19 @@ from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .audit_log import LOG as _AUDIT_LOG, enabled as _audit_enabled
-from .detokenizer import detokenize_text
+from .unmasker import unmask_text
 from .endpoint_policy import POLICY_OFF, policy_for_url
 from .local_only import categories_in, refusal_body
 from .openai_shape import (
     OpenAISSERewriter,
-    detokenise_response as oai_detokenise_response,
+    unmask_response as oai_unmask_response,
     scan_request_for_locked as oai_scan_for_locked,
-    tokenise_request as oai_tokenise_request,
+    mask_request as oai_mask_request,
 )
 from .resolver import resolve_tool_call_args
 from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
-from .tokenizer import Span, tokenize_text
+from .masker import Span, mask_text
 from .vault import Vault
 
 ANTHROPIC_UPSTREAM = os.environ.get(
@@ -84,15 +84,15 @@ PROXY_PORT = int(os.environ.get("APF_PORT", "8765"))
 
 # apf-lnr: control-plane system prompts (filter explainer, agent personality,
 # tool-use schemas) add steady-baseline false-positives to every vault when
-# tokenised, and confuse models that expect their system prompt verbatim.
-# Default: skip role=system. Opt-in via APF_TOKENISE_SYSTEM=1 for setups
+# masked, and confuse models that expect their system prompt verbatim.
+# Default: skip role=system. Opt-in via APF_MASK_SYSTEM=1 for setups
 # whose system prompts legitimately contain user PII the proxy should mask.
 # Note: the locked-category scan ALWAYS runs on system messages regardless
 # of this flag — the safety net for never-forward categories does not depend
-# on whether we tokenise.
-TOKENISE_SYSTEM = os.environ.get("APF_TOKENISE_SYSTEM", "0") != "0"
+# on whether we mask.
+MASK_SYSTEM = os.environ.get("APF_MASK_SYSTEM", "0") != "0"
 
-# apf-1f6: labels detected but NOT tokenised — the value passes through raw.
+# apf-1f6: labels detected but NOT masked — the value passes through raw.
 # ORG is opt-out by default: for the coding-agent use case the overwhelming
 # majority of ORG mentions are public software / services (GitHub, Stripe,
 # OpenAI) where masking yields ~zero privacy gain and breaks the prompt
@@ -133,7 +133,7 @@ def _extract_inline_bypass(text: str, vault: Vault) -> str:
     - `!raw "John Smith"`          — quoted multi-word value (for names,
                                      addresses with spaces, etc.)
 
-    Once whitelisted, the value passes through detection+tokenisation
+    Once whitelisted, the value passes through detection+masking
     unmodified for the rest of the session. Use the
     /v1/sessions/{id}/whitelist endpoint for bulk additions.
     """
@@ -147,7 +147,7 @@ def _extract_inline_bypass(text: str, vault: Vault) -> str:
     return _INLINE_BYPASS_RE.sub(_consume, text)
 
 
-def _tokenise_text(text: str, vault: Vault) -> str:
+def _mask_text(text: str, vault: Vault) -> str:
     if not text or not _DETECTOR:
         return text
     cleaned = _extract_inline_bypass(text, vault)
@@ -157,15 +157,15 @@ def _tokenise_text(text: str, vault: Vault) -> str:
     spans = [Span(start=s.start, end=s.end, label=s.label, tier=s.tier,
                   confidence=getattr(s, "confidence", 1.0))
              for s in detected if s.label not in SKIP_LABELS]
-    return tokenize_text(cleaned, spans, vault)
+    return mask_text(cleaned, spans, vault)
 
 
 def _scan_text_for_locked(text: str) -> list[str]:
     """Read-only locked-label scan. Detects spans on `text`, returns the
-    set of locked-label names encountered. Does NOT tokenise, does NOT
+    set of locked-label names encountered. Does NOT mask, does NOT
     write to the vault.
 
-    This is run before tokenisation (apf-enr) so locked values are never
+    This is run before masking (apf-enr) so locked values are never
     vaulted at all — the proxy refuses to forward and the values stay in
     the original request body, which is discarded along with the 422
     response.
@@ -177,7 +177,7 @@ def _scan_text_for_locked(text: str) -> list[str]:
 
 
 def _scan_body_for_locked(body: dict) -> list[str]:
-    """Walk the same shape as _tokenise_request_body but only collect
+    """Walk the same shape as _mask_request_body but only collect
     locked-category labels. Returns deduplicated list (ordered by first
     sight)."""
     seen: list[str] = []
@@ -190,7 +190,7 @@ def _scan_body_for_locked(body: dict) -> list[str]:
     elif isinstance(body.get("system"), list):
         # apf-47e: the Anthropic API accepts `system` as either a string or
         # a list of typed parts. The locked-cat safety net has to scan both
-        # shapes regardless of TOKENISE_SYSTEM — otherwise a list-form
+        # shapes regardless of MASK_SYSTEM — otherwise a list-form
         # system prompt with locked content could silently forward.
         for part in body["system"]:
             if isinstance(part, dict) and part.get("type") == "text":
@@ -216,26 +216,26 @@ def _scan_body_for_locked(body: dict) -> list[str]:
     return seen
 
 
-def _tokenise_block(block: Any, vault: Vault) -> Any:
-    """Walk a content block (str or list of part-dicts) and tokenise text parts."""
+def _mask_block(block: Any, vault: Vault) -> Any:
+    """Walk a content block (str or list of part-dicts) and mask text parts."""
     if isinstance(block, str):
-        return _tokenise_text(block, vault)
+        return _mask_text(block, vault)
     if isinstance(block, list):
-        return [_tokenise_part(part, vault) for part in block]
+        return [_mask_part(part, vault) for part in block]
     return block
 
 
-def _tokenise_part(part: dict, vault: Vault) -> dict:
+def _mask_part(part: dict, vault: Vault) -> dict:
     if part.get("type") == "text":
-        return {**part, "text": _tokenise_text(part.get("text", ""), vault)}
+        return {**part, "text": _mask_text(part.get("text", ""), vault)}
     if part.get("type") == "tool_result":
         # Tool results coming back FROM the client TO the LLM also need
-        # to be tokenised — they may contain PII (grep output, db rows, etc).
+        # to be masked — they may contain PII (grep output, db rows, etc).
         content = part.get("content")
         if isinstance(content, str):
-            return {**part, "content": _tokenise_text(content, vault)}
+            return {**part, "content": _mask_text(content, vault)}
         if isinstance(content, list):
-            return {**part, "content": [_tokenise_part(p, vault) for p in content]}
+            return {**part, "content": [_mask_part(p, vault) for p in content]}
     return part
 
 
@@ -252,11 +252,11 @@ def _make_secret_resolver(vault: Vault):
     return resolver_for_vault(vault, _SECRET_STORE)
 
 
-def _detokenise_response_body(body: dict, vault: Vault) -> dict:
+def _unmask_response_body(body: dict, vault: Vault) -> dict:
     """For Anthropic Messages API response shape:
         {role, content: [{type: text|tool_use, ...}]}
 
-    - text parts: detokenise for the client (it's about to be shown to
+    - text parts: unmask for the client (it's about to be shown to
       the user, who should see the originals).
     - tool_use parts: resolve `input` JSON via the boundary resolver
       (the client executor needs real values to run the tool).
@@ -270,7 +270,7 @@ def _detokenise_response_body(body: dict, vault: Vault) -> dict:
         if ptype == "text":
             new_content.append({
                 **part,
-                "text": detokenize_text(part.get("text", ""), vault),
+                "text": unmask_text(part.get("text", ""), vault),
             })
         elif ptype == "tool_use":
             new_content.append({
@@ -285,22 +285,22 @@ def _detokenise_response_body(body: dict, vault: Vault) -> dict:
     return {**body, "content": new_content}
 
 
-def _tokenise_request_body(body: dict, vault: Vault) -> dict:
-    """Walk an Anthropic Messages API request and tokenise text + tool_result
-    content. The top-level `system` field is skipped unless TOKENISE_SYSTEM
+def _mask_request_body(body: dict, vault: Vault) -> dict:
+    """Walk an Anthropic Messages API request and mask text + tool_result
+    content. The top-level `system` field is skipped unless MASK_SYSTEM
     is enabled (apf-lnr). Leave the rest untouched."""
     out = dict(body)
-    if TOKENISE_SYSTEM:
+    if MASK_SYSTEM:
         if isinstance(out.get("system"), str):
-            out["system"] = _tokenise_text(out["system"], vault)
+            out["system"] = _mask_text(out["system"], vault)
         elif isinstance(out.get("system"), list):
-            out["system"] = [_tokenise_part(p, vault) for p in out["system"]]
+            out["system"] = [_mask_part(p, vault) for p in out["system"]]
     if isinstance(out.get("messages"), list):
         new_messages = []
         for msg in out["messages"]:
             new_messages.append({
                 **msg,
-                "content": _tokenise_block(msg.get("content"), vault),
+                "content": _mask_block(msg.get("content"), vault),
             })
         out["messages"] = new_messages
     return out
@@ -346,7 +346,7 @@ async def add_whitelist(session_id: str, request: Request) -> dict:
 
     Body: {"values": ["alice@example.com", "MyPseudonym", ...]}
 
-    Values added here pass through detection+tokenisation untouched for
+    Values added here pass through detection+masking untouched for
     the rest of the session. Use for values the user knows are safe to
     forward raw (their own pseudonyms, already-public addresses, test
     fixture values). Inline `!raw VALUE` in the message text does the same
@@ -433,7 +433,7 @@ async def messages(
 
     # Per apf-enr: refuse to forward content in locked categories
     # (asylum, abuse, whistleblower intent, undocumented immigration).
-    # Tokenisation is not safe enough for these — the fact of processing
+    # Masking is not safe enough for these — the fact of processing
     # them is itself a leak. Scan is read-only; values never enter the
     # vault. Skipped when policy=off because the values aren't going to
     # a cloud upstream anyway.
@@ -448,13 +448,13 @@ async def messages(
             )
 
     # Per apf-ycu: if the upstream is a trusted endpoint (local engines,
-    # user-configured exceptions), bypass tokenisation entirely. The proxy
+    # user-configured exceptions), bypass masking entirely. The proxy
     # then acts as a transparent passthrough — useful for routing all
     # traffic through one tool but only filtering cloud destinations.
     if _UPSTREAM_POLICY == POLICY_OFF:
-        tokenised = inbound
+        masked = inbound
     else:
-        tokenised = _tokenise_request_body(inbound, vault)
+        masked = _mask_request_body(inbound, vault)
         # Per apf-ive: record category counts to the audit log (off unless
         # APF_AUDIT_LOG=1). Counts only, never values; safe to surface.
         if _audit_enabled():
@@ -480,17 +480,17 @@ async def messages(
     if beta:
         upstream_headers["anthropic-beta"] = beta
 
-    # Streaming path: tokenised request is forwarded with `stream: true`,
+    # Streaming path: masked request is forwarded with `stream: true`,
     # response is rewritten on the fly via SSERewriter.
-    if tokenised.get("stream") is True:
+    if masked.get("stream") is True:
         return await _stream_messages(
-            session_id, vault, tokenised, upstream_headers
+            session_id, vault, masked, upstream_headers
         )
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         upstream = await client.post(
             f"{ANTHROPIC_UPSTREAM}/v1/messages",
-            json=tokenised,
+            json=masked,
             headers=upstream_headers,
         )
         upstream_body = upstream.json() if upstream.headers.get(
@@ -507,8 +507,8 @@ async def messages(
             }},
         )
 
-    # Detokenise the response for the client.
-    rewritten = _detokenise_response_body(upstream_body, vault)
+    # Unmask the response for the client.
+    rewritten = _unmask_response_body(upstream_body, vault)
     response_headers = _build_response_headers(session_id, vault)
     return JSONResponse(
         content=rewritten,
@@ -554,9 +554,9 @@ def _build_response_headers(session_id: str, vault: Vault) -> dict[str, str]:
 
 
 async def _stream_messages(
-    session_id: str, vault: Vault, tokenised_body: dict, upstream_headers: dict,
+    session_id: str, vault: Vault, masked_body: dict, upstream_headers: dict,
 ) -> StreamingResponse:
-    """SSE relay: forward tokenised stream request, rewrite each event on
+    """SSE relay: forward masked stream request, rewrite each event on
     the fly via SSERewriter. Token-spanning boundaries are buffered per
     content block; tool_use input JSON is accumulated and resolved at
     content_block_stop."""
@@ -568,7 +568,7 @@ async def _stream_messages(
             async with client.stream(
                 "POST",
                 f"{ANTHROPIC_UPSTREAM}/v1/messages",
-                json=tokenised_body,
+                json=masked_body,
                 headers=upstream_headers,
             ) as upstream:
                 async for chunk in upstream.aiter_text():
@@ -587,7 +587,7 @@ async def _stream_messages(
         for out_type, out_data in rewriter.flush():
             yield format_sse_event(out_type, out_data)
 
-    # Request-side tokenisation is complete; summary headers are stable from
+    # Request-side masking is complete; summary headers are stable from
     # here on (LLM output doesn't add new vault entries, only references them).
     headers = _build_response_headers(session_id, vault)
     headers["cache-control"] = "no-cache"
@@ -646,10 +646,10 @@ async def chat_completions(
             )
 
     if _OPENAI_UPSTREAM_POLICY == POLICY_OFF:
-        tokenised = inbound
+        masked = inbound
     else:
-        tokenised = oai_tokenise_request(
-            inbound, vault, _tokenise_text, tokenise_system=TOKENISE_SYSTEM,
+        masked = oai_mask_request(
+            inbound, vault, _mask_text, mask_system=MASK_SYSTEM,
         )
         if _audit_enabled():
             _AUDIT_LOG.record(session_id, vault.summary())
@@ -661,15 +661,15 @@ async def chat_completions(
         if v:
             upstream_headers[h] = v
 
-    if tokenised.get("stream") is True:
+    if masked.get("stream") is True:
         return await _stream_chat_completions(
-            session_id, vault, tokenised, upstream_headers
+            session_id, vault, masked, upstream_headers
         )
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         upstream = await client.post(
             f"{OPENAI_UPSTREAM}/v1/chat/completions",
-            json=tokenised,
+            json=masked,
             headers=upstream_headers,
         )
         upstream_body = upstream.json() if upstream.headers.get(
@@ -684,7 +684,7 @@ async def chat_completions(
                 if k.lower() not in ("content-length", "content-encoding")
             }},
         )
-    rewritten = oai_detokenise_response(
+    rewritten = oai_unmask_response(
         upstream_body, vault, _make_secret_resolver(vault)
     )
     response_headers = _build_response_headers(session_id, vault)
@@ -696,7 +696,7 @@ async def chat_completions(
 
 
 async def _stream_chat_completions(
-    session_id: str, vault: Vault, tokenised_body: dict, upstream_headers: dict,
+    session_id: str, vault: Vault, masked_body: dict, upstream_headers: dict,
 ) -> StreamingResponse:
     """OpenAI streaming relay. Reads data-only SSE chunks from upstream
     and runs them through OpenAISSERewriter."""
@@ -710,7 +710,7 @@ async def _stream_chat_completions(
             async with client.stream(
                 "POST",
                 f"{OPENAI_UPSTREAM}/v1/chat/completions",
-                json=tokenised_body,
+                json=masked_body,
                 headers=upstream_headers,
             ) as upstream:
                 async for chunk in upstream.aiter_text():

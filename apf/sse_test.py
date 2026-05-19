@@ -1,7 +1,7 @@
 """Standalone test of the SSE rewriter.
 
 Verifies:
-1. Text deltas with tokens get detokenised, even when the token straddles
+1. Text deltas with tokens get unmasked, even when the token straddles
    chunk boundaries.
 2. Tool-use input JSON is accumulated across deltas, parsed at
    content_block_stop, resolved via the vault, and emitted as a single

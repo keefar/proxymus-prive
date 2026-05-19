@@ -15,17 +15,17 @@ from .vault import Vault
 
 TOKEN_RE = re.compile(r"<([A-Z_][A-Z0-9_]*?)_(\d+)>")
 
-# apf-b3j: opt-in debug marker. When APF_DETOKENIZE_MARKER is set, every
-# value the detokenizer actually restores gets the marker string appended
+# apf-b3j: opt-in debug marker. When APF_UNMASK_MARKER is set, every
+# value the unmasker actually restores gets the marker string appended
 # ('anna müller✓'). Makes the round-trip observable in test runs — lets
-# you tell 'the detokenizer restored this' apart from 'the value was never
+# you tell 'the unmasker restored this' apart from 'the value was never
 # masked and passed through raw' (visually identical otherwise).
 # Empty by default → output is byte-identical to no marker. Test/debug
 # only; never enable in production (it mutates user-facing text).
-_DETOKENIZE_MARKER = os.environ.get("APF_DETOKENIZE_MARKER", "")
+_UNMASK_MARKER = os.environ.get("APF_UNMASK_MARKER", "")
 
 
-def detokenize_text(text: str, vault: Vault, restore_secrets: bool = False) -> str:
+def unmask_text(text: str, vault: Vault, restore_secrets: bool = False) -> str:
     """Replace each `<REF_N>` token in `text` with its vault original.
 
     Bare `<REF>` (Tier-C) is left as-is by default. Pass restore_secrets=True
@@ -38,7 +38,7 @@ def detokenize_text(text: str, vault: Vault, restore_secrets: bool = False) -> s
         original = vault.get_original(token)
         if original is None:
             return token  # unresolved token — left as-is, no marker
-        return original + _DETOKENIZE_MARKER
+        return original + _UNMASK_MARKER
 
     out = TOKEN_RE.sub(replace, text)
 

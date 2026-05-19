@@ -149,7 +149,7 @@ correct detection at the *tier* level, but lose precision at the *label* level.
 
 **Annotation procedure.**
 
-1. Write the text first, naturally. Don't pre-tokenize.
+1. Write the text first, naturally. Don't pre-mask.
 2. Mark spans in the source (`fixtures/_annotated.md` per bucket?) using `‹label:text›`
    inline markers — easier to author than offsets.
 3. A small `tools/build_fixtures.py` later converts inline-marked text → JSONL with

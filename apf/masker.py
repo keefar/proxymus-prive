@@ -1,6 +1,6 @@
-"""Apply detector spans to text → tokenized text + vault.
+"""Apply detector spans to text → masked text + vault.
 
-The detector emits character-offset spans. The tokenizer:
+The detector emits character-offset spans. The masker:
   1. Sorts spans, drops overlaps (later spans contained in earlier wins).
   2. Walks right-to-left so character offsets in the *remaining* text don't
      shift while substituting.
@@ -42,9 +42,9 @@ def _dedupe_spans(spans: list[Span]) -> list[Span]:
     return sorted(kept, key=lambda s: s.start)
 
 
-def tokenize_text(text: str, spans: list[Span], vault: Vault) -> str:
+def mask_text(text: str, spans: list[Span], vault: Vault) -> str:
     """Replace each span's substring with its vault token. Returns the
-    tokenized text. Mutates the vault.
+    masked text. Mutates the vault.
 
     Spans whose substring matches a user-declared bypass value
     (vault._whitelist, populated via inline `!raw` markers or the
