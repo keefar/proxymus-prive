@@ -191,6 +191,15 @@ siehe bd `apf-6l8`).
   Locked-Category-Refusal (apf-enr) prüft System-Messages **unabhängig**
   vom Flag, der Safety-Net für Never-Forward-Kategorien bleibt aktiv.
 
+- **Detokenizer-Marker (apf-b3j, Debug):** `APF_DETOKENIZE_MARKER`
+  hängt jedem vom Detokenizer *tatsächlich* zurückaufgelösten Wert einen
+  Marker an — `APF_DETOKENIZE_MARKER=✓` macht aus „anna müller" →
+  „anna müller✓". So sieht man im Test, ob der Round-Trip wirklich
+  stattfand oder ob ein Wert nur unmaskiert durchgerutscht ist (optisch
+  sonst identisch). Nur für Test/Debug — **nie in Produktion** (verändert
+  User-sichtbaren Text). Default leer = Output unverändert. Greift nur im
+  Text-Pfad, nicht in der Tool-Call-Resolver-Auflösung.
+
 - **Skip-Labels (apf-1f6):** `APF_SKIP_LABELS` ist eine kommaseparierte
   Liste von Detector-Labels, die zwar erkannt aber **nicht** maskiert
   werden — der Wert geht roh durch. Default: `ORG`. Begründung: im

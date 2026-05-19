@@ -8,11 +8,21 @@ lookup.
 """
 from __future__ import annotations
 
+import os
 import re
 
 from .vault import Vault
 
 TOKEN_RE = re.compile(r"<([A-Z_][A-Z0-9_]*?)_(\d+)>")
+
+# apf-b3j: opt-in debug marker. When APF_DETOKENIZE_MARKER is set, every
+# value the detokenizer actually restores gets the marker string appended
+# ('anna müller✓'). Makes the round-trip observable in test runs — lets
+# you tell 'the detokenizer restored this' apart from 'the value was never
+# masked and passed through raw' (visually identical otherwise).
+# Empty by default → output is byte-identical to no marker. Test/debug
+# only; never enable in production (it mutates user-facing text).
+_DETOKENIZE_MARKER = os.environ.get("APF_DETOKENIZE_MARKER", "")
 
 
 def detokenize_text(text: str, vault: Vault, restore_secrets: bool = False) -> str:
@@ -26,7 +36,9 @@ def detokenize_text(text: str, vault: Vault, restore_secrets: bool = False) -> s
     def replace(m: re.Match[str]) -> str:
         token = m.group(0)
         original = vault.get_original(token)
-        return original if original is not None else token
+        if original is None:
+            return token  # unresolved token — left as-is, no marker
+        return original + _DETOKENIZE_MARKER
 
     out = TOKEN_RE.sub(replace, text)
 
