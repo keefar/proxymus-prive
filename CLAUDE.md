@@ -54,6 +54,10 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
 - `.venv/bin/python -m apf.demo --text "..."` — standalone tokenise → tool-call → restore (no proxy)
 - `.venv/bin/python -m apf.manual_smoke` — in-process FastAPI smoke with fake upstream
 - `.venv/bin/python -m scripts.smoke_loopback` — bulk test vs. a running proxy (incl. benign no-PII cases)
+- `.venv/bin/python -m scripts.toolcall_loopback` — end-to-end tool-call boundary
+  check; `record` mode = deterministic no-leak proof, `--mode live` = real model
+- `scripts/apf_restart.sh [restart|stop|status]` — restart apf wired to a chosen
+  OpenAI upstream (oMLX by default); lets a session restart the proxy itself
 - `.venv/bin/python -m benchmarks.run --adapter ensemble-max --fixtures <f>` — detector
   precision/recall/FP benchmark; result JSON lands in `benchmarks/results/` (gitignored)
 - `curl 127.0.0.1:8765/healthz` — detector status + active sessions + upstream
