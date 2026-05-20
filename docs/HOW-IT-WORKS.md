@@ -281,14 +281,16 @@ appointment time, each individually masked, can still re-identify a person by
 structure across a conversation. A diversity-weighted warning is designed in
 the threat model but not implemented.
 
-### 8.6 Surrogate substitution — experimental, not yet trusted
+### 8.6 Surrogate substitution — validated, but kept opt-in
 
 An alternative to opaque tokens: substitute a *plausible fake* instead —
 "Anna Müller" → "Petra Vogt", a real-looking email instead of `<REF_3>`. It
 reads more naturally to the model and should provoke fewer refusals.
 
 It is **built, flag-gated, and off by default** (`APF_SURROGATE_LABELS`).
-Three reasons it is not trusted yet:
+A local validation (2026-05-21, against the oMLX stack) confirmed surrogate
+mode **holds the tool-call boundary** — originals resolve correctly into tool
+args, nothing leaks. It works. Three reasons it still stays opt-in:
 
 1. **Re-detection** — a surrogate is PII-shaped, so the detector flags it
    again on the next turn. Fixed (`apf-76m`: the masker skips known-surrogate
@@ -302,8 +304,12 @@ Three reasons it is not trusted yet:
    tool arguments changing mid-conversation ("something is rewriting my Grep
    patterns in flight").
 
-So far opaque tokens keep winning on robustness. Surrogate mode stays opt-in,
-per-label — not the default. Validation is tracked in `apf-okt` / `apf-4cs`.
+Surrogate works, but it is strictly less robust than opaque on every count
+above — and the model-refusal problem it was meant to solve is already
+mitigated by the explainer (§7). So opaque stays the default; surrogate is a
+per-label opt-in for cases where natural-text fidelity matters more than the
+robustness margin. The full opaque-vs-surrogate evidence is in
+[`docs/sessions/2026-05-21-surrogate-validation.md`](sessions/2026-05-21-surrogate-validation.md).
 
 ---
 
