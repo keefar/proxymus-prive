@@ -32,8 +32,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import uuid
@@ -108,7 +110,23 @@ def _is_throttled(data: dict) -> bool:
                for n in _RETRY_NEEDLES)
 
 
-def run_scenario(sc: dict, system: str) -> dict:
+def make_audit_dir() -> str:
+    """A clean scratch directory with known, PII-free content. The
+    grep-audit scenarios run here so the vault count is interpretable:
+    they search for PII the directory does NOT contain → 0 matches → the
+    vault should hold only the prompt's masked PII (n_pii). A vault far
+    above n_pii then cleanly signals a real problem (e.g. re-detection),
+    not directory pollution — which is what /tmp/claude gave us."""
+    d = tempfile.mkdtemp(prefix="apf_audit_")
+    with open(os.path.join(d, "readme.txt"), "w", encoding="utf-8") as f:
+        f.write("Internal build tooling. Setup steps are on the team "
+                "wiki. No external services.\n")
+    with open(os.path.join(d, "config.txt"), "w", encoding="utf-8") as f:
+        f.write("timeout=30\nretries=3\nmode=fast\nlog=info\n")
+    return d
+
+
+def run_scenario(sc: dict, system: str, audit_dir: str) -> dict:
     session = f"cltc-{uuid.uuid4().hex[:8]}"
     cmd = ["claude", "-p", sc["prompt"], "--output-format", "json",
            "--allowedTools", "Grep"]
@@ -122,7 +140,7 @@ def run_scenario(sc: dict, system: str) -> dict:
     for attempt in range(RETRIES):
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=300, env=env, cwd="/tmp/claude")
+                                  timeout=300, env=env, cwd=audit_dir)
             data = json.loads(proc.stdout)
         except Exception as e:  # noqa: BLE001
             return {"name": sc["name"], "verdict": "EXC", "detail": str(e)}
@@ -162,24 +180,30 @@ def main() -> int:
     args = ap.parse_args()
 
     selected = [s for s in SCENARIOS if not args.grep or args.grep in s["name"]]
+    audit_dir = make_audit_dir()
     print(f"\ncloud tool-call · proxy={APF_BASE} · system={args.system} · "
-          f"{len(selected)} scenarios\n")
+          f"{len(selected)} scenarios · clean audit dir={audit_dir}")
+    print("(vault should ≈ PII; clean dir has 0 matches — a higher vault "
+          "signals a real problem, not pollution)\n")
     if not args.json:
         print(f"{'SCENARIO':<16} {'PII':<4} {'VERDICT':<9} {'VAULT':<7} DETAIL")
         print("-" * 100)
 
     results = []
-    for i, sc in enumerate(selected):
-        if i > 0:
-            time.sleep(INTER_SCENARIO_GAP_S)  # space calls to avoid RPM throttle
-        r = run_scenario(sc, args.system)
-        results.append(r)
-        if args.json:
-            print(json.dumps(r, ensure_ascii=False))
-            continue
-        print(f"{r['name']:<16} {r.get('n_pii', '?'):<4} "
-              f"{r['verdict']:<9} {str(r.get('vault_total', '?')):<7} "
-              f"{r.get('preview', r.get('detail', ''))}")
+    try:
+        for i, sc in enumerate(selected):
+            if i > 0:
+                time.sleep(INTER_SCENARIO_GAP_S)  # space calls vs RPM throttle
+            r = run_scenario(sc, args.system, audit_dir)
+            results.append(r)
+            if args.json:
+                print(json.dumps(r, ensure_ascii=False))
+                continue
+            print(f"{r['name']:<16} {r.get('n_pii', '?'):<4} "
+                  f"{r['verdict']:<9} {str(r.get('vault_total', '?')):<7} "
+                  f"{r.get('preview', r.get('detail', ''))}")
+    finally:
+        shutil.rmtree(audit_dir, ignore_errors=True)
 
     declines = sum(1 for r in results if r["verdict"] in ("DECLINE", "ERROR"))
     if not args.json:
