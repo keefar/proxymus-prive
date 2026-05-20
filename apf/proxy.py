@@ -257,6 +257,17 @@ def _mask_block(block: Any, vault: Vault) -> Any:
     return block
 
 
+def _walk_json_mask(value: Any, vault: Vault) -> Any:
+    """Re-mask every string leaf of a JSON-shaped structure."""
+    if isinstance(value, str):
+        return _mask_text(value, vault)
+    if isinstance(value, list):
+        return [_walk_json_mask(v, vault) for v in value]
+    if isinstance(value, dict):
+        return {k: _walk_json_mask(v, vault) for k, v in value.items()}
+    return value
+
+
 def _mask_part(part: dict, vault: Vault) -> dict:
     if part.get("type") == "text":
         # apf-xt5: <system-reminder> blocks are Claude Code harness
@@ -273,6 +284,15 @@ def _mask_part(part: dict, vault: Vault) -> dict:
             return {**part, "content": _mask_text(content, vault)}
         if isinstance(content, list):
             return {**part, "content": [_mask_part(p, vault) for p in content]}
+    if part.get("type") == "tool_use":
+        # apf-uc1: a replayed assistant tool_use carries the value the
+        # response path already resolved at the boundary. Re-mask its
+        # input so the original never crosses back to the upstream model.
+        # Deterministic vault tokens mean it collapses to the same <REF_N>
+        # the model first emitted.
+        inp = part.get("input")
+        if isinstance(inp, (dict, list)):
+            return {**part, "input": _walk_json_mask(inp, vault)}
     return part
 
 
