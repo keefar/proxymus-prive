@@ -8,7 +8,9 @@ without the matching mask would turn a display convenience into a leak.
 """
 from __future__ import annotations
 
-from apf.openai_shape import mask_request, unmask_response
+import json
+
+from apf.openai_shape import mask_request, unmask_response, OpenAISSERewriter
 from apf.vault import Vault
 
 _PII = {"Anna Müller": "PERSON", "anna@example.de": "EMAIL"}
@@ -82,3 +84,34 @@ def test_no_reasoning_content_is_harmless() -> None:
 
     assert "reasoning_content" not in msg
     assert msg["content"] == "Hi Anna Müller."
+
+
+def _chunk(reasoning: str) -> str:
+    return json.dumps({"choices": [{"index": 0, "delta": {
+        "reasoning_content": reasoning}}]})
+
+
+def test_sse_unmasks_reasoning_content_stream() -> None:
+    """apf-8pz: the streaming SSE path unmasks delta.reasoning_content."""
+    vault = Vault()
+    token = vault.get_or_mint("Anna Müller", "PERSON", "A").token
+    rw = OpenAISSERewriter(vault)
+    out = rw.feed(_chunk(f"considering {token} now")) + rw.feed("[DONE]")
+    blob = "".join(out)
+    assert "Anna Müller" in blob
+    assert token not in blob
+
+
+def test_sse_reasoning_content_reassembles_split_token() -> None:
+    """A token split across two streamed chunks is buffered, reassembled
+    and unmasked — not emitted half-formed."""
+    vault = Vault()
+    vault.get_or_mint("Bob Stone", "PERSON", "A")  # mints <REF_1>
+    rw = OpenAISSERewriter(vault)
+    out = (rw.feed(_chunk("note <RE"))
+           + rw.feed(_chunk("F_1> end"))
+           + rw.feed("[DONE]"))
+    blob = "".join(out)
+    assert "Bob Stone" in blob
+    assert "<REF_1>" not in blob
+    assert "<RE" not in blob

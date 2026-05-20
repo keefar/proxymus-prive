@@ -262,6 +262,7 @@ class OpenAISSERewriter:
         self.secret_resolver = secret_resolver
         # Per-choice text-buffer + per-(choice,tool_index) tool-call accumulator
         self.text_held: dict[int, str] = {}
+        self.reasoning_held: dict[int, str] = {}  # apf-8pz
         self.tool_calls: dict[tuple[int, int], _ToolCallAccum] = {}
 
     def feed(self, payload: str) -> list[str]:
@@ -280,6 +281,12 @@ class OpenAISSERewriter:
                                         "delta": {"content": held}}]}
                     out.append(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n")
                     self.text_held[idx] = ""
+            for idx, held in self.reasoning_held.items():
+                if held:
+                    obj = {"choices": [{"index": idx,
+                                        "delta": {"reasoning_content": held}}]}
+                    out.append(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n")
+                    self.reasoning_held[idx] = ""
             # Emit accumulated tool_calls if any
             out.extend(self._emit_pending_tool_calls())
             out.append("data: [DONE]\n\n")
@@ -323,6 +330,17 @@ class OpenAISSERewriter:
                 # to preserve the chunk count semantics? Skip the
                 # content field, leave other delta keys intact.
                 new_delta.pop("content", None)
+        # Reasoning trace (apf-8pz) — a reasoning model streams its trace
+        # in delta.reasoning_content; unmask it with the same partial-token
+        # buffering as content, so the user sees originals in the trace.
+        if isinstance(delta.get("reasoning_content"), str):
+            combined = self.reasoning_held.get(idx, "") + delta["reasoning_content"]
+            safe, held = _split_safe(combined)
+            self.reasoning_held[idx] = held
+            if safe:
+                new_delta["reasoning_content"] = unmask_text(safe, self.vault)
+            else:
+                new_delta.pop("reasoning_content", None)
         # Tool calls
         if isinstance(delta.get("tool_calls"), list):
             # Tool calls stream incrementally; accumulate, don't emit

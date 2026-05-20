@@ -293,6 +293,9 @@ def _mask_part(part: dict, vault: Vault) -> dict:
         inp = part.get("input")
         if isinstance(inp, (dict, list)):
             return {**part, "input": _walk_json_mask(inp, vault)}
+    # apf-8pz: 'thinking' / 'redacted_thinking' and other part types pass
+    # through unchanged — thinking blocks are signed and must round-trip
+    # byte-exact (see _unmask_response_body).
     return part
 
 
@@ -338,6 +341,13 @@ def _unmask_response_body(body: dict, vault: Vault) -> dict:
                 ),
             })
         else:
+            # apf-8pz: 'thinking' / 'redacted_thinking' blocks pass through
+            # unchanged on purpose. Anthropic cryptographically signs
+            # thinking blocks, and the model produced them over apf's
+            # MASKED input — the signature covers <REF_N> text. Unmasking
+            # for display would need a byte-exact re-mask on replay to keep
+            # the signature valid; too fragile. Tokens in the trace are safe
+            # (not a leak), so leave them. redacted_thinking is encrypted.
             new_content.append(part)
     return {**body, "content": new_content}
 
