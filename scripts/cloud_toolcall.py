@@ -31,12 +31,22 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.request
 import uuid
 
 from scripts.smoke_loopback import SYSTEM_PROMPT_EXPLAINER
 
 APF_BASE = "http://127.0.0.1:8765"
+
+# Anthropic 529 / RPM throttling ("Server is temporarily limiting requests")
+# is server-side, not the account quota — retrying one-by-one with a delay
+# clears it. Exponential backoff; a 529'd request does not consume quota.
+_RETRY_NEEDLES = ("temporarily limiting", "overloaded", "rate limit",
+                  "rate_limit", "529")
+RETRIES = 4
+BACKOFF_BASE_S = 15
+INTER_SCENARIO_GAP_S = 6
 
 # Each scenario is a Bash-echo task — side-effect-free, and every PII
 # value becomes one <REF> token the model must cope with. n_pii is the
@@ -78,6 +88,15 @@ def _vault(session: str) -> dict:
         return {"_error": str(e)}
 
 
+def _is_throttled(data: dict) -> bool:
+    """True if the response is an Anthropic server-side throttle (529/RPM),
+    which is retryable and does not consume quota."""
+    if data.get("api_error_status"):
+        return True
+    return any(n in (data.get("result") or "").lower()
+               for n in _RETRY_NEEDLES)
+
+
 def run_scenario(sc: dict, system: str) -> dict:
     session = f"cltc-{uuid.uuid4().hex[:8]}"
     cmd = ["claude", "-p", sc["prompt"], "--output-format", "json",
@@ -87,12 +106,21 @@ def run_scenario(sc: dict, system: str) -> dict:
     env = {**os.environ,
            "ANTHROPIC_BASE_URL": APF_BASE,
            "ANTHROPIC_CUSTOM_HEADERS": f"x-apf-session: {session}"}
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=300, env=env, cwd="/tmp/claude")
-        data = json.loads(proc.stdout)
-    except Exception as e:  # noqa: BLE001
-        return {"name": sc["name"], "verdict": "EXC", "detail": str(e)}
+
+    data: dict = {}
+    for attempt in range(RETRIES):
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=300, env=env, cwd="/tmp/claude")
+            data = json.loads(proc.stdout)
+        except Exception as e:  # noqa: BLE001
+            return {"name": sc["name"], "verdict": "EXC", "detail": str(e)}
+        if not _is_throttled(data) or attempt == RETRIES - 1:
+            break
+        wait = BACKOFF_BASE_S * (2 ** attempt)
+        print(f"  {sc['name']}: throttled, retry in {wait}s "
+              f"(attempt {attempt + 1}/{RETRIES})", file=sys.stderr)
+        time.sleep(wait)
 
     result = (data.get("result") or "")
     declined = any(n in result.lower() for n in _DECLINE_NEEDLES)
@@ -130,7 +158,9 @@ def main() -> int:
         print("-" * 100)
 
     results = []
-    for sc in selected:
+    for i, sc in enumerate(selected):
+        if i > 0:
+            time.sleep(INTER_SCENARIO_GAP_S)  # space calls to avoid RPM throttle
         r = run_scenario(sc, args.system)
         results.append(r)
         if args.json:
