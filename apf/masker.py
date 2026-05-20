@@ -9,6 +9,7 @@ The detector emits character-offset spans. The masker:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from .vault import Vault
@@ -68,4 +69,36 @@ def mask_text(text: str, spans: list[Span], vault: Vault) -> str:
         pieces.append(entry.token)
         cursor = span.end
     pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
+_SYSTEM_REMINDER_RE = re.compile(
+    r"<system-reminder>.*?</system-reminder>", re.DOTALL)
+
+
+def mask_outside_system_reminders(text: str, mask_fn) -> str:
+    """Apply mask_fn only to text *outside* <system-reminder>...</system-reminder>
+    blocks (apf-xt5).
+
+    Claude Code injects its operational scaffolding — skill catalogues,
+    agent-type lists, hook output, the CLAUDE.md projection — into the
+    messages array as <system-reminder>-wrapped content. That text carries
+    no user PII; running the detector over it wastes work and over-masks
+    operational tokens (tool names, paths) into placeholders the model can
+    no longer read, leaving it unable to follow its own instructions. Keep
+    those blocks verbatim; mask only the genuine surrounding content.
+
+    mask_fn takes a text fragment and returns it masked — the caller binds
+    the vault. An unclosed <system-reminder> (truncated input) does not
+    match and is masked defensively.
+    """
+    if "<system-reminder>" not in text:
+        return mask_fn(text)
+    pieces: list[str] = []
+    pos = 0
+    for m in _SYSTEM_REMINDER_RE.finditer(text):
+        pieces.append(mask_fn(text[pos:m.start()]))
+        pieces.append(m.group(0))
+        pos = m.end()
+    pieces.append(mask_fn(text[pos:]))
     return "".join(pieces)

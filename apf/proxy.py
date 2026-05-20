@@ -62,7 +62,7 @@ from .openai_shape import (
 from .resolver import resolve_tool_call_args
 from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
-from .masker import Span, mask_text
+from .masker import Span, mask_text, mask_outside_system_reminders
 from .vault import Vault
 
 ANTHROPIC_UPSTREAM = os.environ.get(
@@ -219,7 +219,8 @@ def _scan_body_for_locked(body: dict) -> list[str]:
 def _mask_block(block: Any, vault: Vault) -> Any:
     """Walk a content block (str or list of part-dicts) and mask text parts."""
     if isinstance(block, str):
-        return _mask_text(block, vault)
+        return mask_outside_system_reminders(
+            block, lambda t: _mask_text(t, vault))
     if isinstance(block, list):
         return [_mask_part(part, vault) for part in block]
     return block
@@ -227,7 +228,12 @@ def _mask_block(block: Any, vault: Vault) -> Any:
 
 def _mask_part(part: dict, vault: Vault) -> dict:
     if part.get("type") == "text":
-        return {**part, "text": _mask_text(part.get("text", ""), vault)}
+        # apf-xt5: <system-reminder> blocks are Claude Code harness
+        # scaffolding, not user PII — skip them so the model still sees
+        # its own instructions and tool names. Tool results below are
+        # genuine data and stay fully masked.
+        return {**part, "text": mask_outside_system_reminders(
+            part.get("text", ""), lambda t: _mask_text(t, vault))}
     if part.get("type") == "tool_result":
         # Tool results coming back FROM the client TO the LLM also need
         # to be masked — they may contain PII (grep output, db rows, etc).

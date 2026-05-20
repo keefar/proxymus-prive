@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 
 from .unmasker import unmask_text
 from .resolver import resolve_tool_call_args
-from .masker import Span, mask_text
+from .masker import Span, mask_text, mask_outside_system_reminders
 from .vault import Vault
 
 
@@ -67,14 +67,19 @@ def mask_request(
 def _mask_message(msg: dict, vault: Vault, masker_fn) -> dict:
     out = dict(msg)
     content = msg.get("content")
+    # apf-xt5: <system-reminder> blocks are agent-harness scaffolding, not
+    # user PII — skip them so the model keeps its instructions and tool
+    # names intact.
     if isinstance(content, str):
-        out["content"] = masker_fn(content, vault)
+        out["content"] = mask_outside_system_reminders(
+            content, lambda t: masker_fn(t, vault))
     elif isinstance(content, list):
         new_parts: list = []
         for part in content:
             if isinstance(part, dict) and part.get("type") == "text":
                 new_parts.append({
-                    **part, "text": masker_fn(part.get("text", ""), vault),
+                    **part, "text": mask_outside_system_reminders(
+                        part.get("text", ""), lambda t: masker_fn(t, vault)),
                 })
             else:
                 # image_url and other unknown part types pass through —
