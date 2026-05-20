@@ -114,8 +114,17 @@ look like a prompt-injection pattern."* Not the local models' "missing
 info" misread — a denser, more capable model reads a tight cluster of
 opaque `<REF>` tokens as a possible **injection attack**. The explainer
 clears it. So "no explainer" is not viable for realistic multi-PII
-prompts; apf-76s now tracks a default-explainer implementation decision.
-Harness committed as `scripts/cloud_toolcall.py`.
+prompts. Harness committed as `scripts/cloud_toolcall.py`.
+
+**Resolved:** `apf/explainer.py` now injects that note into cloud-bound
+requests when the vault is non-empty (opt-out `APF_EXPLAINER=off`).
+apf-76s closed. A deeper fix — **surrogate substitution** (plausible
+fake values instead of opaque `<REF_N>`, so the request reads as normal
+text and never trips the injection defence) — would supersede the
+explainer on Tier-A-dense prompts; filed as **apf-okt** with a hybrid
+design (surrogates for non-sensitive Tier-A identifiers, opaque kept for
+secrets and the §3.1 categorical-sensitive set). Confirmed empirically:
+a 6-PII prompt with plausible values completes with no explainer.
 
 ## Commits / artifacts
 
