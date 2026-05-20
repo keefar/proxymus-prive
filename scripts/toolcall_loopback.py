@@ -57,7 +57,12 @@ from scripts.smoke_loopback import SYSTEM_PROMPT_EXPLAINER
 APF_BASE = "http://127.0.0.1:8765"
 REC_PORT = 8099
 OMLX_UPSTREAM = "http://127.0.0.1:8000"
-LIVE_MODEL = "gemma-4-26b-a4b-it-4bit"
+# A real tool-calling model: gemma is historically unreliable for tool
+# calling under MLX. Qwen Holo3 is a reasoning model — it emits clean
+# tool calls even on masked prompts, but needs token headroom + a long
+# timeout (see MAX_TOKENS / _http_json timeout).
+LIVE_MODEL = "Qwen3.6-35B-A3B-Holo3-Qwopus-mxfp4-mlx"
+MAX_TOKENS = 4096
 RESTART_SCRIPT = Path(__file__).resolve().parent / "apf_restart.sh"
 
 
@@ -181,7 +186,7 @@ SCENARIOS: list[dict[str, Any]] = [
 
 # ── HTTP helpers ───────────────────────────────────────────────────────────
 def _http_json(method: str, path: str, body: dict | None = None,
-               session: str | None = None, timeout: float = 180.0) -> dict:
+               session: str | None = None, timeout: float = 600.0) -> dict:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(APF_BASE + path, data=data, method=method,
                                  headers={"Content-Type": "application/json"})
@@ -216,7 +221,8 @@ def _vault_total(status: dict) -> int:
 
 # ── Scenario runner ────────────────────────────────────────────────────────
 def run_scenario(sc: dict, model: str, recorder, probe: str,
-                 system_prompt: str | None = None) -> dict:
+                 system_prompt: str | None = None,
+                 max_tokens: int = MAX_TOKENS) -> dict:
     name = sc["name"]
     session = f"tc-{uuid.uuid4().hex[:8]}"
     fails: list[str] = []
@@ -241,6 +247,7 @@ def run_scenario(sc: dict, model: str, recorder, probe: str,
         "tool_choice": {"type": "function",
                         "function": {"name": sc["tool_name"]}},
         "temperature": 0,
+        "max_tokens": max_tokens,
     }
     try:
         resp1 = _http_json("POST", "/v1/chat/completions", turn1, session)
@@ -266,11 +273,25 @@ def run_scenario(sc: dict, model: str, recorder, probe: str,
     tcs = _tool_calls(resp1)
     if not tcs:
         if recorder is None:
-            # real model declined to call a tool — a finding, not an apf bug
+            # real model declined to call a tool — a finding, not an apf
+            # bug. finish_reason distinguishes 'stop' (model chose text)
+            # from 'length' (max_tokens cut it off mid-reasoning).
+            ch1 = (resp1.get("choices") or [{}])[0]
+            ct = (resp1.get("usage") or {}).get("completion_tokens")
             return {"name": name, "ok": None, "fails": [],
-                    "notes": notes + ["live model emitted no tool_call"]}
+                    "notes": notes + [f"no tool_call (finish="
+                                      f"{ch1.get('finish_reason')}, "
+                                      f"completion_tokens={ct})"]}
         fails.append("no tool_call in response (apf dropped it?)")
         return {"name": name, "ok": False, "fails": fails, "notes": notes}
+
+    # Reasoning models put their trace in reasoning_content; apf's OpenAI
+    # response path unmasks only content + tool_calls, so <REF> tokens can
+    # surface there unrestored. Surfaced as a note — the rig's contract is
+    # the tool-call boundary, not trace restoration (tracked separately).
+    msg1 = (resp1.get("choices") or [{}])[0].get("message", {}) or {}
+    if "<REF" in (msg1.get("reasoning_content") or ""):
+        notes.append("reasoning_content carries unrestored <REF> tokens")
 
     # Assert A: arguments the client sees are resolved to originals
     try:
@@ -321,6 +342,7 @@ def run_scenario(sc: dict, model: str, recorder, probe: str,
         ],
         "tools": sc["tools"],
         "temperature": 0,
+        "max_tokens": max_tokens,
     }
     try:
         _http_json("POST", "/v1/chat/completions", turn2, session)
@@ -374,6 +396,10 @@ def main() -> int:
                          "token-explainer (mitigates a real model declining "
                          "tool calls on opaque <REF> tokens). Default: "
                          "explainer for live mode, off for record mode.")
+    ap.add_argument("--max-tokens", type=int, default=MAX_TOKENS,
+                    help=f"per-turn max_tokens (default {MAX_TOKENS}; "
+                         f"reasoning models need headroom to think then "
+                         f"emit the tool call)")
     ap.add_argument("--keep-omlx", action="store_true",
                     help="record mode: leave apf pointed at the recorder "
                          "instead of restoring the oMLX wiring")
@@ -403,7 +429,8 @@ def main() -> int:
     results = []
     try:
         for sc in scenarios:
-            r = run_scenario(sc, model, recorder, probe, sys_prompt)
+            r = run_scenario(sc, model, recorder, probe, sys_prompt,
+                             args.max_tokens)
             results.append(r)
             if args.json:
                 print(json.dumps(r, ensure_ascii=False))

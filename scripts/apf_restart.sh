@@ -68,15 +68,19 @@ APF_PID=$!
 disown
 echo "$APF_PID" >"$PIDFILE"
 
-for _ in $(seq 1 60); do
+# apf loads the MLX detector ensemble on startup; a cold load while the
+# box is under memory pressure (e.g. a 35B model resident in oMLX) can
+# take well over a minute. Wait generously — the loop exits the instant
+# healthz answers, so a warm start still returns in well under a second.
+for _ in $(seq 1 360); do
   if curl -fs "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
     echo "apf up on :$PORT (pid $APF_PID) — OpenAI upstream: $OPENAI_UPSTREAM"
     curl -s "http://127.0.0.1:$PORT/healthz"; echo
     exit 0
   fi
-  sleep 0.25
+  sleep 0.5
 done
 
-echo "apf did NOT come up within 15s. Last log lines:" >&2
+echo "apf did NOT come up within 180s. Last log lines:" >&2
 tail -25 "$LOG" >&2
 exit 1
