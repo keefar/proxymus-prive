@@ -22,6 +22,10 @@ original values in incoming responses. Detection runs on a small local
 LLM via **MLX** on Apple Silicon, augmented by regex/NER for known-good
 patterns.
 
+**New here?** [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) walks the pipeline
+end to end and gives an honest ledger of what was hard to build and what is
+still unsolved.
+
 ## Why another one?
 
 Similar projects exist (see [`docs/research/EXISTING-SOLUTIONS.md`](docs/research/EXISTING-SOLUTIONS.md)).
@@ -87,6 +91,7 @@ fixtures/                     # PII fixtures (DE+EN, public + private)
 tools/                        # ai4privacy corpus builders
 scripts/                      # over-filter eval + dfta upstream check
 docs/
+  HOW-IT-WORKS.md             # pipeline walk-through + honest difficulties ledger
   ARCHITECTURE.md             # design + decision log
   MODELS.md                   # candidate models for the MLX detector
   MODEL-EVALUATION.md         # current dossier on the detector layer
