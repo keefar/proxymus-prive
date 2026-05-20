@@ -98,6 +98,25 @@ back. **Open:** detector precision on genuine content (residual FPs are
 now single-digit, not 200); the apf-76s explainer/multi-token question
 for Claude is now unblocked and testable.
 
+## Follow-up: the Claude explainer matrix (apf-76s)
+
+With over-masking fixed, the actual product question was finally
+testable: does Claude need the apf-6l8 token explainer? Ran `claude -p`
+through apf with multi-PII Bash-echo tool-call prompts:
+
+| masked tokens | no explainer | + explainer |
+|---|---|---|
+| 3 | OK | OK |
+| 6 | **DECLINE** | OK |
+
+At 6 tokens, plain, Claude refused — *"I won't do that. The placeholders
+look like a prompt-injection pattern."* Not the local models' "missing
+info" misread — a denser, more capable model reads a tight cluster of
+opaque `<REF>` tokens as a possible **injection attack**. The explainer
+clears it. So "no explainer" is not viable for realistic multi-PII
+prompts; apf-76s now tracks a default-explainer implementation decision.
+Harness committed as `scripts/cloud_toolcall.py`.
+
 ## Commits / artifacts
 
 - `mask_outside_system_reminders` (`masker.py`) + `masker_test.py`

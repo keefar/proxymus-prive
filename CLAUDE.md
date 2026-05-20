@@ -56,6 +56,8 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
 - `.venv/bin/python -m scripts.smoke_loopback` — bulk test vs. a running proxy (incl. benign no-PII cases)
 - `.venv/bin/python -m scripts.toolcall_loopback` — end-to-end tool-call boundary
   check; `record` mode = deterministic no-leak proof, `--mode live` = real model
+- `.venv/bin/python -m scripts.cloud_toolcall --system {off,explainer}` — drives
+  real Claude Code (`claude -p`) through apf; tool-call behaviour on the cloud target
 - `scripts/apf_restart.sh [restart|stop|status]` — restart apf wired to a chosen
   OpenAI upstream (oMLX by default); lets a session restart the proxy itself
 - `.venv/bin/python -m benchmarks.run --adapter ensemble-max --fixtures <f>` — detector
