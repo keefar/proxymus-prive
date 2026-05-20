@@ -52,6 +52,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .audit_log import LOG as _AUDIT_LOG, enabled as _audit_enabled
 from .unmasker import unmask_text
 from .endpoint_policy import POLICY_OFF, policy_for_url
+from .explainer import inject_into_anthropic, inject_into_openai
 from .local_only import categories_in, refusal_body
 from .openai_shape import (
     OpenAISSERewriter,
@@ -527,6 +528,11 @@ async def messages(
         if _audit_enabled():
             _AUDIT_LOG.record(session_id, vault.summary())
 
+    # apf-76s: prepend the placeholder explainer to the system prompt — a
+    # dense <REF_N> cluster otherwise trips the model's prompt-injection
+    # defence. No-op when nothing was masked (empty vault).
+    masked = inject_into_anthropic(masked, vault)
+
     # Forward to Anthropic. We pass through Authorization/x-api-key from the
     # caller. The proxy itself doesn't hold an API key.
     upstream_headers = {
@@ -720,6 +726,10 @@ async def chat_completions(
         )
         if _audit_enabled():
             _AUDIT_LOG.record(session_id, vault.summary())
+
+    # apf-76s: explain the <REF_N> placeholder convention to the model.
+    # No-op when nothing was masked (empty vault).
+    masked = inject_into_openai(masked, vault)
 
     # Forward auth + organisation headers as the client sent them.
     upstream_headers = {"content-type": "application/json"}
