@@ -40,6 +40,7 @@ counters so token IDs don't leak information across sessions.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from threading import Lock
 
@@ -56,6 +57,16 @@ class VaultEntry:
     # The secret resolver can look this up in env/Keychain at tool-call time
     # so the real secret is supplied by the local store, not the vault.
     secret_key_name: str | None = None
+    # apf-okt: a plausible fake value of the same type. When set, it — not
+    # the opaque `token` — is the surface form substituted into outgoing
+    # text. `token` is still minted for audit / internal reference.
+    surrogate: str | None = None
+
+    @property
+    def surface(self) -> str:
+        """The string actually substituted into outgoing text — the
+        surrogate when one was minted, else the opaque token."""
+        return self.surrogate if self.surrogate is not None else self.token
 
 
 class Vault:
@@ -86,10 +97,24 @@ class Vault:
     def whitelist_size(self) -> int:
         return len(self._whitelist)
 
+    def _unique_surrogate(self, gen: Callable[[], str], original: str) -> str:
+        """Draw from `gen` until the surrogate collides with nothing —
+        not an existing surface form, not any stored original, not the
+        value being masked. Gives up dedup after 50 tries (vanishingly
+        unlikely with the generator's pool sizes)."""
+        for _ in range(50):
+            cand = gen()
+            if (cand != original and cand not in self._by_token
+                    and cand not in self._by_original):
+                return cand
+        return gen()
+
     def get_or_mint(self, original: str, label: str, tier: str,
                     confidence: float = 1.0,
                     secret_key_name: str | None = None,
-                    third_party: bool = False) -> VaultEntry:
+                    third_party: bool = False,
+                    surrogate_gen: Callable[[], str] | None = None
+                    ) -> VaultEntry:
         """Return an existing entry for this value or mint a new one.
 
         If the value has been seen before, the entry's `confidence` is
@@ -100,6 +125,10 @@ class Vault:
 
         The internal `label` is preserved on the entry but does NOT appear
         in the surface token — see module docstring §5.1.
+
+        apf-okt: if `surrogate_gen` is given (only for surrogate-eligible
+        Tier-A labels — never Tier C), a unique plausible-fake value is
+        minted as the entry's surface form instead of the opaque token.
         """
         with self._lock:
             entry = self._by_original.get(original)
@@ -111,9 +140,10 @@ class Vault:
                         confidence=confidence,
                         third_party=entry.third_party,
                         secret_key_name=entry.secret_key_name,
+                        surrogate=entry.surrogate,
                     )
                     self._by_original[original] = entry
-                    # Refresh by_token map
+                    # Refresh reverse map (keyed by surface form)
                     for k, v in list(self._by_token.items()):
                         if v.original == original:
                             self._by_token[k] = entry
@@ -131,12 +161,17 @@ class Vault:
             else:
                 self._ref_counter += 1
                 token = f"<REF_{self._ref_counter}>"
+                surrogate = (self._unique_surrogate(surrogate_gen, original)
+                             if surrogate_gen is not None else None)
                 entry = VaultEntry(token=token, original=original,
                                    label=label, tier=tier,
                                    confidence=confidence,
-                                   third_party=third_party)
+                                   third_party=third_party,
+                                   surrogate=surrogate)
                 self._by_original[original] = entry
-                self._by_token[token] = entry
+                # Reverse map is keyed by the surface form — the opaque
+                # token, or the surrogate when one was minted.
+                self._by_token[entry.surface] = entry
             return entry
 
     def low_confidence_entries(self, threshold: float = 0.85) -> list[VaultEntry]:
