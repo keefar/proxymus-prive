@@ -132,3 +132,31 @@ a 6-PII prompt with plausible values completes with no explainer.
 - `AGENT_TERMS` / `_mask_text` filter (`proxy.py`) + `agent_terms_test.py`
 - `_walk_json_mask` + `_mask_part` tool_use branch + `tool_use_remask_test.py`
 - closed: **apf-xt5**, **apf-uc1**
+
+## Surrogate substitution (apf-okt) — built, premise not confirmed
+
+The deeper fix — masking Tier-A identifiers to plausible fake values
+instead of opaque `<REF_N>`, so the request reads as natural text — was
+built end to end: a hand-rolled per-type generator, vault dual-mapping,
+masker / unmasker / resolver paths, `APF_SURROGATE_LABELS` wiring. Seven
+increments, each tested, 146 green; flag-gated, default-off, so the
+opaque default is untouched.
+
+The live cloud verification (surrogate mode, explainer *off*) did **not**
+confirm the premise:
+
+- **Re-detection bug** ([[apf-76m]]) — a surrogate is itself PII-shaped,
+  so when it flows back (tool result, replayed history) apf's own
+  detector re-masks it. `echo_1pii` produced a 2-entry vault from one
+  PII and the echo round-trip broke. Opaque markers are immune.
+- The 3- and 6-PII echo prompts **declined** — a privacy-trained model
+  resists verbatim-echoing what looks like real personal contact data.
+  *Caveat:* the `cloud_toolcall` scenarios ("echo this PII block") were
+  built for the opaque token-density test and are inherently
+  injection-shaped — not a fair test of surrogate mode.
+
+So surrogate mode is implemented but **not validated**. The apf-76s
+explainer remains the working shipped fix. Pursuing surrogates further
+means fixing apf-76m and re-testing with task-shaped scenarios (PII
+incidental to a real task, not a verbatim PII-block echo) — a decision
+left to the user.
