@@ -12,13 +12,16 @@ How it routes — no custom tooling, two env vars:
 The session header lets the script read /v1/sessions/<id>/status after
 the run and see exactly what apf masked.
 
-Finding it was built to capture (2026-05-20): Claude tolerates a few
-masked <REF> tokens, but a dense cluster trips its prompt-injection
-defence and it declines — `--system explainer` (the apf-6l8 token
-explainer) fixes it. Run both modes to reproduce:
+Scenarios (apf-4cs) are task-shaped — a genuine "audit the directory
+for leaked contact details" Grep search, the PII being the search
+target — not a verbatim PII-block echo (the echo framing is itself
+injection-shaped and skews the result). Run:
 
     .venv/bin/python -m scripts.cloud_toolcall --system off
     .venv/bin/python -m scripts.cloud_toolcall --system explainer
+
+Also exercises surrogate mode when apf runs with APF_SURROGATE_LABELS
+set — the surrogate values then carry through instead of <REF> tokens.
 
 Prerequisites: apf running with the Anthropic upstream (default), and a
 logged-in `claude` CLI on PATH. Each scenario is one real Claude API
@@ -48,27 +51,35 @@ RETRIES = 4
 BACKOFF_BASE_S = 15
 INTER_SCENARIO_GAP_S = 6
 
-# Each scenario is a Bash-echo task — side-effect-free, and every PII
-# value becomes one <REF> token the model must cope with. n_pii is the
-# masked-token count the prompt is built to produce.
+# apf-4cs: task-shaped scenarios. The PII is the target of a genuine
+# "audit the codebase for leaked contact details" task — read-only,
+# side-effect-free — not a verbatim PII block to echo. The echo framing
+# ("echo this exact line") is itself prompt-injection-shaped and skews
+# the result; a search task is what a real user would actually ask.
+# n_pii is the count of distinct PII values the prompt carries.
 SCENARIOS: list[dict] = [
     {
-        "name": "echo_1pii", "n_pii": 1,
-        "prompt": ("Use the Bash tool to echo exactly this line, nothing "
-                   "else: ping anna.mueller@example.de"),
+        "name": "search_1pii", "n_pii": 1,
+        "prompt": ("Use the Grep tool to find how many files in this "
+                   "directory mention the email address "
+                   "anna.mueller@example.de. Report just the count."),
     },
     {
-        "name": "echo_3pii", "n_pii": 3,
-        "prompt": ("Use the Bash tool to echo exactly this line, nothing "
-                   "else: contact Anna Mueller at anna.mueller@example.de "
-                   "phone +49 30 11223344"),
+        "name": "search_3pii", "n_pii": 3,
+        "prompt": ("I want to check this directory for leaked contact "
+                   "details. Use the Grep tool to search for any mention "
+                   "of Anna Mueller, the email anna.mueller@example.de, "
+                   "or the phone number +49 30 11223344, and tell me "
+                   "what you found."),
     },
     {
-        "name": "echo_6pii", "n_pii": 6,
-        "prompt": ("Use the Bash tool to echo exactly this line, nothing "
-                   "else: contact Anna Mueller at anna.mueller@example.de "
-                   "phone +49 30 11223344 and Thomas Berger at "
-                   "thomas.berger@example.de phone +49 89 99887766"),
+        "name": "search_6pii", "n_pii": 6,
+        "prompt": ("Audit this directory for leaked contact details. Use "
+                   "the Grep tool to search for any mention of Anna "
+                   "Mueller, Thomas Berger, their emails "
+                   "anna.mueller@example.de and thomas.berger@example.de, "
+                   "or their phone numbers +49 30 11223344 and "
+                   "+49 89 99887766. Summarise what you found."),
     },
 ]
 
@@ -100,7 +111,7 @@ def _is_throttled(data: dict) -> bool:
 def run_scenario(sc: dict, system: str) -> dict:
     session = f"cltc-{uuid.uuid4().hex[:8]}"
     cmd = ["claude", "-p", sc["prompt"], "--output-format", "json",
-           "--allowedTools", "Bash(echo:*)"]
+           "--allowedTools", "Grep"]
     if system == "explainer":
         cmd += ["--append-system-prompt", SYSTEM_PROMPT_EXPLAINER]
     env = {**os.environ,
