@@ -90,6 +90,12 @@ def _mask_message(msg: dict, vault: Vault, masker_fn) -> dict:
             _mask_tool_call(tc, vault, masker_fn)
             for tc in msg["tool_calls"]
         ]
+    # apf-8pz: reasoning models carry their trace in reasoning_content.
+    # Mask it symmetrically with content — a trace that _unmask_choice
+    # restored for display must not leak originals upstream if the agent
+    # replays it on the next turn.
+    if isinstance(msg.get("reasoning_content"), str):
+        out["reasoning_content"] = masker_fn(msg["reasoning_content"], vault)
     return out
 
 
@@ -168,6 +174,11 @@ def _unmask_choice(choice: dict, vault: Vault, secret_resolver) -> dict:
         new_msg = dict(msg)
         if isinstance(msg.get("content"), str):
             new_msg["content"] = unmask_text(msg["content"], vault)
+        # apf-8pz: a reasoning model's trace lives in reasoning_content;
+        # the user should see originals in it, exactly as in content.
+        if isinstance(msg.get("reasoning_content"), str):
+            new_msg["reasoning_content"] = unmask_text(
+                msg["reasoning_content"], vault)
         if isinstance(msg.get("tool_calls"), list):
             new_msg["tool_calls"] = [
                 _resolve_tool_call(tc, vault, secret_resolver)
