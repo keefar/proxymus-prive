@@ -60,10 +60,12 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
   real Claude Code (`claude -p`) through apf; tool-call behaviour on the cloud target
 - `scripts/apf_restart.sh [restart|stop|status]` — restart apf wired to a chosen
   OpenAI upstream (oMLX by default); lets a session restart the proxy itself
+- **Cloud-test routing:** `claude -p` obeys `ANTHROPIC_BASE_URL` + `ANTHROPIC_CUSTOM_HEADERS="x-apf-session: <id>"` (pins one vault — Claude Code sends no apf session header itself). Bursty `claude -p` trips Anthropic's 529 throttle ("temporarily limiting requests, not your usage limit" = server-side, **not** your plan quota) — space calls / use `cloud_toolcall`'s backoff.
 - `.venv/bin/python -m benchmarks.run --adapter ensemble-max --fixtures <f>` — detector
   precision/recall/FP benchmark; result JSON lands in `benchmarks/results/` (gitignored)
 - `curl 127.0.0.1:8765/healthz` — detector status + active sessions + upstream
 - `curl 127.0.0.1:8765/v1/sessions/<id>/status` — vault counts (no originals leaked) — the diagnostic of choice when the upstream LLM has no request log
+- **Unit-testing masking offline:** `proxy._DETECTOR` is set in the FastAPI lifespan — monkeypatch it with a span-returning stub (see `apf/skip_labels_test.py`) to test `_mask_text` without the MLX model.
 - **Local-loopback gotcha:** `127.0.0.1` defaults to `POLICY_OFF` (no filtering) per `apf/endpoint_policy.py`. For local-test rigs override via `~/.config/apf/endpoints.toml` — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) "Local-loopback testing".
 
 ## Constraints
@@ -108,6 +110,7 @@ bd close <id>         # Complete work
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
+- Writing `bd --notes`/`--description` from Bash: **no backticks** in the string — the shell command-substitutes them and corrupts the note. Plain text only.
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
