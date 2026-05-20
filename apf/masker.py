@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .surrogates import SURROGATE_LABELS, generate_surrogate
 from .vault import Vault
 
 
@@ -43,13 +44,20 @@ def _dedupe_spans(spans: list[Span]) -> list[Span]:
     return sorted(kept, key=lambda s: s.start)
 
 
-def mask_text(text: str, spans: list[Span], vault: Vault) -> str:
-    """Replace each span's substring with its vault token. Returns the
-    masked text. Mutates the vault.
+def mask_text(text: str, spans: list[Span], vault: Vault,
+              surrogate_labels: frozenset[str] = frozenset()) -> str:
+    """Replace each span's substring with its vault surface form. Returns
+    the masked text. Mutates the vault.
 
     Spans whose substring matches a user-declared bypass value
     (vault._whitelist, populated via inline `!raw` markers or the
     /v1/sessions/{id}/whitelist endpoint) are passed through unmodified.
+
+    apf-okt: for a span whose label is in `surrogate_labels` (and is
+    surrogate-eligible per surrogates.SURROGATE_LABELS — the second check
+    is a guard, so a misconfiguration cannot surrogate a sensitive
+    category), the surface form is a plausible fake value instead of the
+    opaque <REF_N> token. Default empty set → opaque, unchanged.
     """
     cleaned = _dedupe_spans(spans)
     pieces: list[str] = []
@@ -61,12 +69,17 @@ def mask_text(text: str, spans: list[Span], vault: Vault) -> str:
         if vault.is_whitelisted(original):
             # User explicitly opted this value out — let it through raw.
             continue
+        surrogate_gen = None
+        if span.label in surrogate_labels and span.label in SURROGATE_LABELS:
+            surrogate_gen = (lambda o=original, lbl=span.label:
+                             generate_surrogate(o, lbl))
         entry = vault.get_or_mint(original, span.label, span.tier,
                                   confidence=span.confidence,
                                   secret_key_name=span.context_key,
-                                  third_party=span.third_party)
+                                  third_party=span.third_party,
+                                  surrogate_gen=surrogate_gen)
         pieces.append(text[cursor:span.start])
-        pieces.append(entry.token)
+        pieces.append(entry.surface)
         cursor = span.end
     pieces.append(text[cursor:])
     return "".join(pieces)
