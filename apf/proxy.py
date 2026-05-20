@@ -192,6 +192,23 @@ def _extract_inline_bypass(text: str, vault: Vault) -> str:
     return _INLINE_BYPASS_RE.sub(_consume, text)
 
 
+def _known_surrogate_spans(text: str, vault: Vault) -> list[tuple[int, int]]:
+    """Char ranges in `text` occupied by a value the vault has already
+    masked to a surrogate (apf-76m). A surrogate is PII-shaped, so the
+    detector re-flags any surrogate replayed from an earlier turn —
+    detections overlapping these ranges must be dropped, the region is
+    already masked."""
+    ranges: list[tuple[int, int]] = []
+    for entry in vault.all_entries():
+        if entry.surrogate is None:
+            continue
+        start = 0
+        while (i := text.find(entry.surrogate, start)) != -1:
+            ranges.append((i, i + len(entry.surrogate)))
+            start = i + len(entry.surrogate)
+    return ranges
+
+
 def _mask_text(text: str, vault: Vault) -> str:
     if not text or not _DETECTOR:
         return text
@@ -201,11 +218,17 @@ def _mask_text(text: str, vault: Vault) -> str:
     # apf-xt5: drop spans whose whole text is an agent operational term
     # (a tool name etc.) — the NER mis-fires e.g. "Grep" -> PERSON, and a
     # masked tool name leaves the agent unable to act.
+    # apf-76m: drop spans that overlap a value already masked to a
+    # surrogate — the surrogate is PII-shaped and gets re-flagged.
+    surrogate_spans = _known_surrogate_spans(cleaned, vault)
     spans = []
     for s in detected:
         if s.label in SKIP_LABELS:
             continue
         if cleaned[s.start:s.end].strip().lower() in AGENT_TERMS:
+            continue
+        if any(s.start < end and begin < s.end
+               for begin, end in surrogate_spans):
             continue
         spans.append(Span(start=s.start, end=s.end, label=s.label,
                            tier=s.tier,
