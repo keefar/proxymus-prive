@@ -64,6 +64,7 @@ from .resolver import resolve_tool_call_args
 from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
 from .masker import Span, mask_text, mask_outside_system_reminders
+from .surrogates import SURROGATE_LABELS
 from .vault import Vault
 
 ANTHROPIC_UPSTREAM = os.environ.get(
@@ -133,6 +134,26 @@ def _load_agent_terms() -> frozenset[str]:
 
 AGENT_TERMS = _load_agent_terms()
 
+# apf-okt: labels masked as plausible surrogate values instead of opaque
+# <REF_N>. Default empty → fully opaque (the apf-5ue default — no
+# behaviour change unless opted in). Set APF_SURROGATE_LABELS to a
+# comma-separated label list or "all". Always intersected with the
+# ratified hybrid set (surrogates.SURROGATE_LABELS — non-sensitive
+# Tier-A identifiers): naming a secret/sensitive category is ignored, so
+# a misconfiguration cannot surrogate something that must stay opaque.
+def _load_surrogate_labels() -> frozenset[str]:
+    raw = os.environ.get("APF_SURROGATE_LABELS", "").strip()
+    if not raw:
+        return frozenset()
+    if raw.lower() == "all":
+        return SURROGATE_LABELS
+    requested = frozenset(t.strip().upper()
+                          for t in raw.split(",") if t.strip())
+    return requested & SURROGATE_LABELS
+
+
+SURROGATE_LABELS_CONFIG = _load_surrogate_labels()
+
 # Per-session vaults. In production: bounded LRU with eviction; for PoC, dict.
 _VAULTS: dict[str, Vault] = {}
 _DETECTOR: Any = None
@@ -189,7 +210,8 @@ def _mask_text(text: str, vault: Vault) -> str:
         spans.append(Span(start=s.start, end=s.end, label=s.label,
                            tier=s.tier,
                            confidence=getattr(s, "confidence", 1.0)))
-    return mask_text(cleaned, spans, vault)
+    return mask_text(cleaned, spans, vault,
+                     surrogate_labels=SURROGATE_LABELS_CONFIG)
 
 
 def _scan_text_for_locked(text: str) -> list[str]:
