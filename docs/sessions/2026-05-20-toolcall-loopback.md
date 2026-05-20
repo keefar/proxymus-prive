@@ -89,6 +89,12 @@ it "cannot see"). oMLX's forced `tool_choice` is best-effort, not strict.
 This is a model / test-backend property, **not an apf correctness bug** —
 apf's resolution was correct on every emitted call. Filed as [[apf-76s]].
 
+*Re-validated 14:34 against oMLX `HEAD-f6f4269`: an oMLX update had been
+installed 01:54 but the service was only restarted at 14:33, so the
+original runs hit the pre-update binary. Both configs reproduce exactly
+on the updated build — `--system off` 3/7, `--system explainer` 4/7,
+same scenarios — so the finding is oMLX-version-independent.*
+
 ## What this proves / does not prove
 
 **Proves:**
