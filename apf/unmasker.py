@@ -1,10 +1,11 @@
 """Restore originals in text emitted by the LLM.
 
-Walks the text, finds `<REF_N>` patterns, swaps each for its vault original.
-The bare `<REF>` surface token (Tier-C) is intentionally *not* resolved here —
-that would expose the secret to LLM-facing output. Callers wanting to resolve
-secrets must use the tool-call resolver path with an explicit secret store
-lookup.
+Walks the text, finds `<REF_N>` patterns and (apf-okt) any surrogate
+surface forms minted by the vault, swaps each for its original. The bare
+`<REF>` surface token (Tier-C) is intentionally *not* resolved here —
+that would expose the secret to LLM-facing output. Callers wanting to
+resolve secrets must use the tool-call resolver path with an explicit
+secret store lookup.
 """
 from __future__ import annotations
 
@@ -41,6 +42,15 @@ def unmask_text(text: str, vault: Vault, restore_secrets: bool = False) -> str:
         return original + _UNMASK_MARKER
 
     out = TOKEN_RE.sub(replace, text)
+
+    # apf-okt: surrogate surface forms are plain strings (a fake name,
+    # IP, …), not <REF_N> tokens — restore them by scan. Longest-first so
+    # a short surrogate cannot corrupt a longer one it is a substring of.
+    surrogates = [(e.surrogate, e.original) for e in vault.all_entries()
+                  if e.surrogate is not None]
+    for surrogate, original in sorted(surrogates, key=lambda p: -len(p[0])):
+        if surrogate in out:
+            out = out.replace(surrogate, original + _UNMASK_MARKER)
 
     if restore_secrets:
         # Replace bare `<REF>` markers — but the surface token is intentionally
