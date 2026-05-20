@@ -43,6 +43,15 @@ def _resolve_string(value: str, vault: Vault,
 
     out = TOKEN_RE.sub(replace, value)
 
+    # apf-okt: resolve surrogate surface forms back to originals so the
+    # local executor runs the tool with the real value. Longest-first;
+    # no debug marker here — it would corrupt tool arguments.
+    surrogates = [(e.surrogate, e.original) for e in vault.all_entries()
+                  if e.surrogate is not None]
+    for surrogate, original in sorted(surrogates, key=lambda p: -len(p[0])):
+        if surrogate in out:
+            out = out.replace(surrogate, original)
+
     if "<REF>" in out and secret_resolver is not None:
         replacement = secret_resolver()
         if replacement is not None:

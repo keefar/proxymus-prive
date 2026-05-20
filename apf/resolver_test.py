@@ -95,3 +95,51 @@ def test_returns_new_structure_not_mutated_input() -> None:
     out = resolve_tool_call_args(args, vault)
     assert args == {"to": tok["anna müller"]}  # input untouched
     assert out == {"to": "anna müller"}
+
+
+# ── apf-okt: surrogate resolution at the tool boundary ──────────────────────
+
+def _surrogate(vault: Vault, original: str, surrogate: str,
+               label: str = "PERSON") -> str:
+    vault.get_or_mint(original, label, "A", surrogate_gen=lambda: surrogate)
+    return surrogate
+
+
+def test_resolves_surrogate_to_original() -> None:
+    vault = Vault()
+    s = _surrogate(vault, "Anna Müller", "Petra Vogel")
+    assert resolve_tool_call_args(f"email {s}", vault) == "email Anna Müller"
+
+
+def test_resolves_surrogate_in_nested_args() -> None:
+    vault = Vault()
+    s = _surrogate(vault, "anna@real.de", "petra@fake.de", label="EMAIL")
+    args = {"to": s, "cc": [s, "keep@as.is"]}
+    assert resolve_tool_call_args(args, vault) == {
+        "to": "anna@real.de", "cc": ["anna@real.de", "keep@as.is"]}
+
+
+def test_resolves_surrogate_and_token_together() -> None:
+    vault = Vault()
+    s = _surrogate(vault, "Anna Müller", "Petra Vogel")
+    tok = vault.get_or_mint("/secret/path", "PATH", "B").token
+    out = resolve_tool_call_args(f"{s} -> {tok}", vault)
+    assert out == "Anna Müller -> /secret/path"
+
+
+def test_surrogate_longest_first() -> None:
+    vault = Vault()
+    _surrogate(vault, "Bonn", "Trier", label="LOCATION")
+    _surrogate(vault, "Bonn Hauptbahnhof", "Trier Süd Terminal",
+               label="LOCATION")
+    out = resolve_tool_call_args("go to Trier Süd Terminal", vault)
+    assert out == "go to Bonn Hauptbahnhof"
+
+
+def test_surrogate_resolution_carries_no_marker(monkeypatch) -> None:
+    # the resolver path must never append the unmask debug marker
+    import apf.unmasker as unmasker
+    monkeypatch.setattr(unmasker, "_UNMASK_MARKER", "✓")
+    vault = Vault()
+    s = _surrogate(vault, "Anna Müller", "Petra Vogel")
+    assert resolve_tool_call_args(s, vault) == "Anna Müller"
