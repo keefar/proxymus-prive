@@ -109,6 +109,29 @@ def _load_skip_labels() -> frozenset[str]:
 
 SKIP_LABELS = _load_skip_labels()
 
+# apf-xt5: operational terms a coding agent uses that the NER detector
+# mis-fires as PERSON/LOCATION/ORG — most visibly tool names ("Grep" ->
+# PERSON). A masked tool name breaks the agent outright, so a span whose
+# *entire* text is one of these is detected but not masked. Whole-span
+# match only: "grepson@example.de" is unaffected. Extend via
+# APF_AGENT_TERMS (comma-separated, added to the built-in set).
+_BUILTIN_AGENT_TERMS = frozenset({
+    "agent", "askuserquestion", "bash", "bashoutput", "edit",
+    "enterplanmode", "enterworktree", "exitplanmode", "exitworktree",
+    "glob", "grep", "killshell", "monitor", "notebookedit", "notebookread",
+    "read", "schedulewakeup", "skill", "slashcommand", "task", "todowrite",
+    "toolsearch", "webfetch", "websearch", "write",
+})
+
+
+def _load_agent_terms() -> frozenset[str]:
+    extra = os.environ.get("APF_AGENT_TERMS", "")
+    return _BUILTIN_AGENT_TERMS | frozenset(
+        t.strip().lower() for t in extra.split(",") if t.strip())
+
+
+AGENT_TERMS = _load_agent_terms()
+
 # Per-session vaults. In production: bounded LRU with eviction; for PoC, dict.
 _VAULTS: dict[str, Vault] = {}
 _DETECTOR: Any = None
@@ -152,11 +175,19 @@ def _mask_text(text: str, vault: Vault) -> str:
         return text
     cleaned = _extract_inline_bypass(text, vault)
     detected = _DETECTOR.detect(cleaned)
-    # apf-1f6: drop spans whose label is in SKIP_LABELS (default: ORG) —
-    # detected but not masked, the value passes through raw.
-    spans = [Span(start=s.start, end=s.end, label=s.label, tier=s.tier,
-                  confidence=getattr(s, "confidence", 1.0))
-             for s in detected if s.label not in SKIP_LABELS]
+    # apf-1f6: drop spans whose label is in SKIP_LABELS (default: ORG).
+    # apf-xt5: drop spans whose whole text is an agent operational term
+    # (a tool name etc.) — the NER mis-fires e.g. "Grep" -> PERSON, and a
+    # masked tool name leaves the agent unable to act.
+    spans = []
+    for s in detected:
+        if s.label in SKIP_LABELS:
+            continue
+        if cleaned[s.start:s.end].strip().lower() in AGENT_TERMS:
+            continue
+        spans.append(Span(start=s.start, end=s.end, label=s.label,
+                           tier=s.tier,
+                           confidence=getattr(s, "confidence", 1.0)))
     return mask_text(cleaned, spans, vault)
 
 
