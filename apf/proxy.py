@@ -673,37 +673,62 @@ def _build_response_headers(session_id: str, vault: Vault) -> dict[str, str]:
 
 async def _stream_messages(
     session_id: str, vault: Vault, masked_body: dict, upstream_headers: dict,
-) -> StreamingResponse:
+) -> Response:
     """SSE relay: forward masked stream request, rewrite each event on
     the fly via SSERewriter. Token-spanning boundaries are buffered per
     content block; tool_use input JSON is accumulated and resolved at
-    content_block_stop."""
+    content_block_stop.
+
+    apf-3pe: the upstream status is checked before committing to a
+    StreamingResponse. An upstream 4xx/5xx (e.g. 429) returns a JSON error
+    body, not an SSE stream — wrapping it in a StreamingResponse would hand
+    the client a misleading HTTP 200. The real status + body is surfaced
+    instead."""
     rewriter = SSERewriter(vault, secret_resolver=_make_secret_resolver(vault))
+
+    client = httpx.AsyncClient(timeout=300.0)
+    request = client.build_request(
+        "POST",
+        f"{ANTHROPIC_UPSTREAM}/v1/messages",
+        json=masked_body,
+        headers=upstream_headers,
+    )
+    upstream = await client.send(request, stream=True)
+
+    if upstream.status_code != 200:
+        # Error response — not an SSE stream. Surface it verbatim.
+        body = await upstream.aread()
+        await upstream.aclose()
+        await client.aclose()
+        return Response(
+            content=body,
+            status_code=upstream.status_code,
+            media_type=upstream.headers.get("content-type",
+                                            "application/json"),
+            headers={"x-apf-session": session_id},
+        )
 
     async def generate():
         buffer = ""
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async with client.stream(
-                "POST",
-                f"{ANTHROPIC_UPSTREAM}/v1/messages",
-                json=masked_body,
-                headers=upstream_headers,
-            ) as upstream:
-                async for chunk in upstream.aiter_text():
-                    buffer += chunk
-                    while True:
-                        ev_type, ev_data, buffer = parse_sse_event(buffer)
-                        if ev_type is None:
-                            break
-                        if ev_data is None:
-                            # Forward malformed/empty events as-is.
-                            yield (f"event: {ev_type}\ndata: \n\n").encode("utf-8")
-                            continue
-                        for out_type, out_data in rewriter.feed(ev_type, ev_data):
-                            yield format_sse_event(out_type, out_data)
-        # End of upstream — flush any held text.
-        for out_type, out_data in rewriter.flush():
-            yield format_sse_event(out_type, out_data)
+        try:
+            async for chunk in upstream.aiter_text():
+                buffer += chunk
+                while True:
+                    ev_type, ev_data, buffer = parse_sse_event(buffer)
+                    if ev_type is None:
+                        break
+                    if ev_data is None:
+                        # Forward malformed/empty events as-is.
+                        yield (f"event: {ev_type}\ndata: \n\n").encode("utf-8")
+                        continue
+                    for out_type, out_data in rewriter.feed(ev_type, ev_data):
+                        yield format_sse_event(out_type, out_data)
+            # End of upstream — flush any held text.
+            for out_type, out_data in rewriter.flush():
+                yield format_sse_event(out_type, out_data)
+        finally:
+            await upstream.aclose()
+            await client.aclose()
 
     # Request-side masking is complete; summary headers are stable from
     # here on (LLM output doesn't add new vault entries, only references them).
