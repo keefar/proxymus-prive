@@ -61,6 +61,9 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
 ## Verification & debug toolkit
 
 - `.venv/bin/python -m pytest apf/` — unit tests
+- `.venv/bin/python -m apf.proxy_test` — end-to-end proxy test (round-trip,
+  masking, tool-call resolution, OpenAI path). A script-test — **not**
+  pytest-collected, so the `pytest` gate misses it; run it too when changing the proxy.
 - `.venv/bin/python -m apf.demo --text "..."` — standalone tokenise → tool-call → restore (no proxy)
 - `.venv/bin/python -m apf.manual_smoke` — in-process FastAPI smoke with fake upstream
 - `.venv/bin/python -m scripts.smoke_loopback` — bulk test vs. a running proxy (incl. benign no-PII cases)
@@ -86,7 +89,7 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
   precision/recall/FP benchmark; result JSON lands in `benchmarks/results/` (gitignored)
 - `curl 127.0.0.1:8765/healthz` — detector status + active sessions + upstream
 - `curl 127.0.0.1:8765/v1/sessions/<id>/status` — vault counts (no originals leaked) — the diagnostic of choice when the upstream LLM has no request log
-- **Unit-testing masking offline:** `proxy._DETECTOR` is set in the FastAPI lifespan — monkeypatch it with a span-returning stub (see `apf/skip_labels_test.py`) to test `_mask_text` without the MLX model.
+- **Unit-testing masking offline:** `proxy._DETECTOR` is set in the FastAPI lifespan — monkeypatch it with a span-returning stub (see `apf/skip_labels_test.py`) to test `_mask_text` without the MLX model. For proxy HTTP-path tests (streaming, error propagation), also patch `proxy.httpx.AsyncClient` and use `TestClient` *without* its context manager (skips the lifespan/MLX load) — see `apf/stream_error_test.py`.
 - **Local-loopback gotcha:** `127.0.0.1` defaults to `POLICY_OFF` (no filtering) per `apf/endpoint_policy.py`. For local-test rigs override via `~/.config/apf/endpoints.toml` — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) "Local-loopback testing".
 
 ## Constraints
