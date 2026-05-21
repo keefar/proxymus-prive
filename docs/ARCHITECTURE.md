@@ -8,7 +8,9 @@ pick between the options below. Recommendation at the bottom; not yet executed.
 - **Host:** M5 MacBook Air, 32 GB unified memory, fanless
 - **Inference:** MLX on Apple Silicon (Python ecosystem)
 - **Detection budget:** ≤ 4 GB combined RAM, ≤ 1.5 s p95 stage-2 latency
-- **First agent target:** Claude Code (most important to user); second target Cursor or Aider
+- **First agent target:** Hermes + the OpenAI-compatible ecosystem (Cursor,
+  Aider, Codex, Cline). The Claude Code path is blocked by Anthropic's
+  subscription-auth policy — see the 2026-05-22 decision-log entry.
 - **Boundary:** all PII detection / mapping happens locally; only sanitized text crosses
   the network
 
@@ -436,3 +438,43 @@ than a silent leak.
 - New (deferred until PoC end): re-test against the `apf-4f4.10`
   BF16-vs-8bit Nemotron question is now moot — Nemotron is dominated
   by GLiNER across every metric. Close `apf-4f4.10` as not-going-to-do.
+
+### 2026-05-22 — Delivery model: the HTTP proxy is blocked for subscription Claude Code
+
+The PoC set out to validate the model layer and the tool-call resolver. It
+did — and it also surfaced a delivery-model problem that outranks both.
+
+**Finding.** Routing Claude Code through apf to the real Anthropic API
+fails 100% with `429 rate_limit_error` whenever the account uses a
+Free/Pro/Max **subscription** (OAuth) token. Anthropic's policy (~April
+2026) refuses subscription auth for non-first-party use; a proxy hop makes
+the request non-first-party, and the discriminator sits below the HTTP
+layer (forwarding every client header + the query string does not help).
+Direct `claude -p` works; via-apf does not. Not a throttle, not a capacity
+incident, not an apf bug — deliberate policy.
+
+**The agent-side alternative does not close the gap.** A capability review
+of Claude Code's hooks + the Agent SDK: `UserPromptSubmit` cannot rewrite
+the prompt, `PostToolUse` is read-only, and no hook can rewrite the model's
+response before display. An HTTP proxy is the only mechanism for the
+bidirectional round-trip apf needs. So for subscription Claude Code there
+is no viable delivery mechanism — proxy blocked, hooks insufficient.
+
+This retires Open question 1 from the wrong direction: the question was
+*where* tool-call resolution lives; the answer is that for subscription
+Claude Code the proxy cannot be in the path at all.
+
+**Decision.** The proxy is not abandoned — only its Claude-subscription
+path is. apf works unchanged for OpenAI-compatible / local agents (Hermes,
+Cursor, Aider, Codex, Cline, local models via oMLX), and the core —
+detector, vault, tool-call-boundary resolution — is auth-agnostic.
+
+- **First agent target shifts from Claude Code to Hermes** + the
+  OpenAI-compatible ecosystem. Develop and release there.
+- The Anthropic path stays in the tree, marked blocked; re-enable trigger =
+  an Anthropic policy change or a found solution.
+- A feature request to Anthropic (`docs/ANTHROPIC-FEATURE-REQUEST.md`) asks
+  for a sanctioned mechanism.
+
+Full reasoning + workstreams: `docs/sessions/2026-05-22-apf-dtq-strategy.md`
+(and `2026-05-21-surrogate-validation.md` for the investigation trail).

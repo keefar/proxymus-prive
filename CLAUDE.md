@@ -13,6 +13,13 @@ incoming responses. **Target hardware:** M5 MacBook Air, 32 GB unified memory.
 Completions, both streaming), MLX detector ensemble, vault round-trip, tool-call
 boundary resolution — shipped with a green test suite. Past the research stage.
 
+**Delivery constraint (apf-dtq, 2026-05-22):** routing subscription Claude Code
+through apf is blocked by Anthropic policy — it refuses proxied subscription
+OAuth. First agent target is now **Hermes + OpenAI-compatible** agents; the
+Claude path stays in-tree, marked, re-enableable. The proxy and the whole filter
+are unaffected for OpenAI-compatible / local upstreams. See
+`docs/sessions/2026-05-22-apf-dtq-strategy.md`.
+
 ## Where to look first
 
 1. **`README.md`** — vision, scope, non-goals

@@ -26,6 +26,14 @@ models on Apple Silicon. No text is sent anywhere for detection.
 end to end and gives an honest ledger of what was hard to build and what is
 still unsolved.
 
+> **Agent support, honestly:** the HTTP proxy works today for
+> OpenAI-compatible and local agents — Hermes, Cursor, Aider, Codex, Cline,
+> local models. Routing **Claude Code on a Free/Pro/Max subscription** is
+> currently **blocked by Anthropic's subscription-auth policy** (it refuses
+> proxied subscription OAuth) — see the 2026-05-22 entry in
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The Claude path stays in
+> the tree, ready to re-enable if that policy changes.
+
 ## Why another one?
 
 Similar projects exist (see [`docs/research/EXISTING-SOLUTIONS.md`](docs/research/EXISTING-SOLUTIONS.md)).
@@ -53,8 +61,9 @@ None of them combine all four of the things this project is exploring:
 - **PoC** — prove that an MLX-hosted small model (≤4B) plus a deterministic
   detector layer reaches usable quality and latency for in-path filtering
   → **engine decision made** ([`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md))
-- **Daily driver** — usable as an HTTP proxy for at least Claude Code and one
-  other agent → proxy ships, daily-driver validation pending
+- **Daily driver** — usable as an HTTP proxy for Hermes and the
+  OpenAI-compatible agent ecosystem → proxy ships, validation Hermes-first
+  (the Claude Code path is blocked upstream — see `docs/ARCHITECTURE.md`)
 - **Open-source release** — if the PoC validates the approach
 
 ## Non-goals (for now)
