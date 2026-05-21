@@ -542,7 +542,11 @@ def main() -> int:
         )
         assert_eq(warmup_oai.status_code, 200, "OpenAI warmup status 200")
         out_body_oai = fake.last_request_body
-        user_text = out_body_oai["messages"][1]["content"]
+        # apf-76s prepends an explainer system message when the vault is
+        # non-empty, so the user message is no longer at a fixed index —
+        # find it by role rather than assuming messages[1].
+        user_text = next(m["content"] for m in out_body_oai["messages"]
+                         if m["role"] == "user")
         if "thomas.weber@example.de" in user_text:
             print(f"FAIL  raw email reached upstream: {user_text!r}")
             sys.exit(1)
