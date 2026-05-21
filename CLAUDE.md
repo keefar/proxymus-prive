@@ -63,7 +63,18 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
   real Claude Code (`claude -p`) through apf; tool-call behaviour on the cloud target
 - `scripts/apf_restart.sh [restart|stop|status]` — restart apf wired to a chosen
   OpenAI upstream (oMLX by default); lets a session restart the proxy itself
-- **Cloud-test routing:** `claude -p` obeys `ANTHROPIC_BASE_URL` + `ANTHROPIC_CUSTOM_HEADERS="x-apf-session: <id>"` (pins one vault — Claude Code sends no apf session header itself). Bursty `claude -p` trips Anthropic's 529 throttle ("temporarily limiting requests, not your usage limit" = server-side, **not** your plan quota) — space calls / use `cloud_toolcall`'s backoff.
+- **Cloud-test routing — BLOCKED for Max-plan auth (apf-dtq, 2026-05-21):** routing
+  `claude -p` through apf to the real Anthropic API fails 100% with `429
+  rate_limit_error` ("Server is temporarily limiting requests"). This is **not** a
+  throttle and **not** burstiness — it is Anthropic policy (since ~April 2026):
+  Pro/Max **subscription OAuth** tokens are refused for non-first-party use, and a
+  proxy hop makes the request non-first-party (detected below the HTTP layer —
+  forwarding all headers + query does not help). Direct `claude -p` works; via-apf
+  does not. Cloud validation against real Claude needs an **Anthropic API key**
+  (metered billing works through proxies) or an agent-side integration. For
+  throttle-immune cloud-shaped validation use the **local oMLX rig**
+  (`toolcall_loopback --mode live`). `ANTHROPIC_CUSTOM_HEADERS="x-apf-session: <id>"`
+  still pins one vault if a working auth path exists.
 - `.venv/bin/python -m benchmarks.run --adapter ensemble-max --fixtures <f>` — detector
   precision/recall/FP benchmark; result JSON lands in `benchmarks/results/` (gitignored)
 - `curl 127.0.0.1:8765/healthz` — detector status + active sessions + upstream
