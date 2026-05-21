@@ -1,26 +1,26 @@
 # agent-privacy-filter
 
-**Status (2026-05-18):** PoC end-to-end. FastAPI proxy speaks Anthropic
-Messages **and** OpenAI Chat Completions, SSE streaming wired, opaque
-`<REF_N>` tokenisation with stable per-session IDs, secret resolver
-hook at the tool-call boundary, regex+GLiNER+Nemotron ensemble detector,
-endpoint trust map, off-by-default audit-log scaffold. 14 tests, all
-green in 0.21 s (`.venv/bin/python -m pytest apf/`). Smoke runner spins
-the proxy in-process (`.venv/bin/python -m apf.manual_smoke`).
+**Status (2026-05-21):** working PoC, end-to-end. FastAPI proxy speaks
+Anthropic Messages **and** OpenAI Chat Completions, SSE streaming wired,
+opaque `<REF_N>` masking with stable per-session IDs, secret resolver
+hook at the tool-call boundary, a regex + Presidio + GLiNER ensemble
+detector, endpoint trust map, off-by-default audit-log scaffold. 155
+tests, all green (`.venv/bin/python -m pytest apf/ benchmarks/`). Smoke
+runner spins the proxy in-process (`.venv/bin/python -m apf.manual_smoke`).
 
 What still needs work: daily-driver validation in a real agent (target:
 Claude Code, with [Hermes](https://hermes-agent.nousresearch.com/) +
-[oMLX](https://omlx.ai/) as the all-local test substrate),
-local-only-category routing ([apf-sgz](../../#)), audit-log persistence
-([apf-x1t](../../#)), and the implicit-PII UX confirmation flag from
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+[oMLX](https://omlx.ai/) as the all-local test substrate), detector
+precision tuning, audit-log persistence, and the implicit-PII UX
+confirmation flag. [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §9 has
+the honest open-issues list.
 
 A local privacy filter for coding agents (Claude Code, Cursor, Aider, Codex,
 Hermes, …) that detects personal information in outgoing traffic, swaps it
 for stable placeholders before it leaves the machine, and restores the
-original values in incoming responses. Detection runs on a small local
-LLM via **MLX** on Apple Silicon, augmented by regex/NER for known-good
-patterns.
+original values in incoming responses. Detection runs entirely on the
+local machine — an ensemble of regex, Microsoft Presidio, and GLiNER NER
+models on Apple Silicon. No text is sent anywhere for detection.
 
 **New here?** [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) walks the pipeline
 end to end and gives an honest ledger of what was hard to build and what is
@@ -31,8 +31,8 @@ still unsolved.
 Similar projects exist (see [`docs/research/EXISTING-SOLUTIONS.md`](docs/research/EXISTING-SOLUTIONS.md)).
 None of them combine all four of the things this project is exploring:
 
-1. **Local LLM on Apple Silicon (MLX-native)** for context-aware PII detection
-   — beyond regex, beyond Presidio's classical NER
+1. **Local NER models on Apple Silicon** for context-aware PII detection
+   — beyond plain regex, adding zero-shot GLiNER for paraphrased / implicit PII
 2. **Reversible** round-trip (anonymize → LLM → de-anonymize)
 3. **Multi-agent** (not tied to one tool)
 4. **Tool-call resolution at the tool boundary** — the open problem nobody has solved:
@@ -77,16 +77,18 @@ assistant; combined memory budget for filter models is ≤ 4 GB.
 ```
 apf/                          # filter runtime
   proxy.py                    # FastAPI: /v1/messages (Anthropic) + /v1/chat/completions (OpenAI)
-  tokenizer.py / detokenizer.py
+  masker.py / unmasker.py     # mask PII → placeholders, restore originals
   vault.py                    # per-session vault, stable <REF_N> IDs
   resolver.py + secrets.py    # tool-call-boundary resolution (the differentiator)
+  surrogates.py               # opt-in plausible-fake substitution (apf-okt)
+  explainer.py                # system-prompt note explaining <REF_N> to the model
   sse.py / openai_shape.py    # streaming + OpenAI shape adapter
   endpoint_policy.py          # trust map (loopback + mDNS + cloud APIs)
   audit_log.py                # off-by-default in-memory ring buffer
   local_only.py               # never-forward refusal pathway (v1)
   demo.py / manual_smoke.py   # standalone + in-process smoke runners
-  *_test.py                   # 14 pytest tests
-benchmarks/                   # detector benchmark harness + 30 result files
+  *_test.py                   # pytest suite (155 tests, run with benchmarks/)
+benchmarks/                   # detector ensemble adapters + benchmark harness
 fixtures/                     # PII fixtures (DE+EN, public + private)
 tools/                        # ai4privacy corpus builders
 scripts/                      # over-filter eval + dfta upstream check
@@ -108,10 +110,10 @@ docs/
 ## Running
 
 ```bash
-# tests (14, ~0.2 s)
-.venv/bin/python -m pytest apf/
+# tests (155, sub-second)
+.venv/bin/python -m pytest apf/ benchmarks/
 
-# standalone demo: detector → tokenize → simulated round-trip → restore
+# standalone demo: detector → mask → simulated round-trip → restore
 .venv/bin/python -m apf.demo
 
 # in-process smoke: spins the FastAPI proxy in-process with a fake upstream
@@ -129,12 +131,10 @@ docs/
    for local loopback: Hermes (NousResearch) → apf → oMLX (Apple Silicon
    MLX inference server) — no cloud dependency, full proxy + filter
    visibility. See [`docs/sessions/`](docs/sessions/) for the test plan.
-2. **Local-only routing** ([apf-sgz](../../#)) — design the never-forward
-   pathway for asylum / abuse / whistleblower / undocumented-immigration
-   categories. Needs concrete scenario evaluation (~5–10 fixture-corpus
-   examples) before any code.
-3. **Audit log v2** ([apf-x1t](../../#)) — disk persistence + Keychain
-   encryption + retention policy for the v1 in-memory scaffold.
+2. **Detector precision tuning** — `PERSON` false positives are the
+   largest remaining lever; see [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §8.
+3. **Audit log v2** — disk persistence + Keychain encryption + retention
+   policy for the v1 in-memory scaffold.
 
 ## License
 
