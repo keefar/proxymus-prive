@@ -23,8 +23,9 @@ benchmarks/results/
 # content; keep them local even though the fixtures themselves are synthetic.
 docs/results/
 # Note: fixtures/*.jsonl IS committed (synthetic, see docs/MODELS.md).
-# Beads' .beads/issues.jsonl is a passive export; DB is source of truth.
-.beads/issues.jsonl
+# Beads' .beads/issues.jsonl IS committed — a versioned snapshot of the
+# issue state alongside the code (the Dolt DB stays the source of truth;
+# this project has no Dolt remote, so the tracked export is the backup).
 
 # Editor / OS
 .DS_Store
