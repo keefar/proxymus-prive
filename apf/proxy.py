@@ -766,7 +766,8 @@ async def _stream_messages(
     body, not an SSE stream — wrapping it in a StreamingResponse would hand
     the client a misleading HTTP 200. The real status + body is surfaced
     instead."""
-    rewriter = SSERewriter(vault, secret_resolver=_make_secret_resolver(vault))
+    rewriter = SSERewriter(vault, secret_resolver=_make_secret_resolver(vault),
+                           on_unresolved=vault.note_unresolved)
 
     client = httpx.AsyncClient(timeout=300.0)
     request = client.build_request(
