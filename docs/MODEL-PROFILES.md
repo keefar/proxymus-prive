@@ -104,17 +104,59 @@ profile so everyone benefits:
 
 ### How to test a model
 
-A quick, sufficient check:
+The fastest way is the **conformance harness** (`apf-vh8`,
+`benchmarks/model_conformance.py`). It runs a fixed four-probe suite against
+an OpenAI-compatible endpoint, classifies the model, and emits a profile TOML
+in exactly this schema:
 
-- **token_passthrough** — run a few real masked requests through apf to that
-  model (an `<REF_N>`-heavy prompt) and see whether the tokens come back
-  byte-identical. If apf's round-trip restore fails or warns, the model is
-  mangling — set `mangles`.
-- **injection_sensitivity** — send a prompt with a dense cluster of opaque
-  tokens close together. If the model declines, hedges, or flags it as
-  suspicious, set `high`.
-- **recommended_strategy** — `surrogate` if `token_passthrough=mangles`,
-  otherwise `opaque`.
+```bash
+# Probe a model and print the profile TOML to stdout:
+.venv/bin/python -m benchmarks.model_conformance --mode live \
+    --endpoint http://127.0.0.1:8000 --model my-model
+
+# Or write it straight to a contributable file:
+.venv/bin/python -m benchmarks.model_conformance --mode live \
+    --endpoint http://127.0.0.1:8000 --model my-model \
+    --out model_profiles/my-model.toml
+```
+
+`--endpoint` defaults to `http://127.0.0.1:8000` (oMLX on the dev machine);
+point it at any OpenAI-compatible Chat Completions server. `--api-key` adds a
+Bearer token if the endpoint needs one. `--mode demo` classifies built-in
+canned probe output with no network — a quick check that the tool works.
+
+The four probes:
+
+- **verbatim passthrough** — sends a prompt full of `<REF_N>` tokens and
+  checks they come back byte-identical → `token_passthrough`.
+- **mangling pattern** — when not verbatim, captures *how* the model mangled
+  the tokens (the `apf-2qz` shape: `<REF_1>` → `REF_1@example.com`) into the
+  profile `notes`.
+- **injection sensitivity** — sends a dense opaque-token cluster (`apf-76s`)
+  and checks whether the model declines / flags it → `injection_sensitivity`.
+- **tool-call boundary** — a prompt that should yield a tool call carrying a
+  token; checks whether the token survives inside the tool-call arguments.
+
+`recommended_strategy` follows automatically: `surrogate` if the model
+mangles, otherwise `opaque`.
+
+The harness writes the verdict into the `notes` field as an evidence trail —
+review it, then add the hardware and quantization you tested on before
+committing.
+
+**Regression mode.** For a model that already has a committed profile, add
+`--check`: the harness classifies the live model and exits non-zero if the
+classification has drifted from the shipped profile. Useful in CI or after a
+model/quant bump.
+
+> The classifier itself is unit-tested hermetically
+> (`benchmarks/conformance_classifier_test.py`) — canned probe outputs in,
+> asserted profile out — so the `pytest` suite never hits a live model.
+
+If you prefer a manual check: run an `<REF_N>`-heavy masked request through
+apf and see whether the tokens come back byte-identical (mangled → set
+`mangles`); send a dense opaque cluster and watch for a decline (→
+`injection_sensitivity = high`).
 
 ## Currently shipped profiles
 

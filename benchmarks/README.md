@@ -8,11 +8,37 @@ adapters in `apf-4f4.5..7`).
 
 ```
 benchmarks/
-├── adapters.py        ← Detector protocol + RegexBaseline (mock floor)
-├── metrics.py         ← tier-equality + label-equality scoring, per-slice aggregation
-├── run.py             ← entry point: load, run, score, dump JSON
-└── results/           ← gitignored output dir
+├── adapters.py            ← Detector protocol + RegexBaseline (mock floor)
+├── metrics.py             ← tier-equality + label-equality scoring, per-slice aggregation
+├── run.py                 ← entry point: load, run, score, dump JSON
+├── model_conformance.py   ← apf-vh8: probe an upstream model, classify its
+│                            <REF_N> token handling, emit a model profile
+└── results/               ← gitignored output dir
 ```
+
+## Model-conformance harness (apf-vh8)
+
+`model_conformance.py` is a separate harness — not a detector benchmark. It
+probes an *upstream* model (the one apf forwards to), classifies how it
+handles `<REF_N>` tokens, and emits an `apf-ao2` model profile.
+
+```bash
+# Probe a live OpenAI-compatible endpoint, print the profile TOML:
+python -m benchmarks.model_conformance --mode live \
+    --endpoint http://127.0.0.1:8000 --model my-model
+
+# Classify built-in canned probe output (no network):
+python -m benchmarks.model_conformance --mode demo
+
+# Regression-check a model against its committed profile:
+python -m benchmarks.model_conformance --mode live --check --model my-model
+```
+
+The classifier is a pure function (`classify`) unit-tested hermetically in
+`conformance_classifier_test.py` — the live-probe run is a separate `--mode
+live` entry point, mirroring the record/live split of
+`scripts/toolcall_loopback.py`. See `docs/MODEL-PROFILES.md` for the full
+contribution workflow.
 
 ## Run
 
