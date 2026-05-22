@@ -23,7 +23,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import apf.proxy as proxy  # noqa: E402
 
-_SUMMARY_KEYS = {"total", "per_tier", "per_label", "third_party"}
+_SUMMARY_KEYS = {"total", "per_tier", "per_label", "third_party",
+                 "unresolved"}  # apf-6dt: fail-loud unresolved-token count
 
 
 def test_list_sessions_empty(monkeypatch) -> None:

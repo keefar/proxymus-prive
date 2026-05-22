@@ -158,21 +158,28 @@ def scan_request_for_locked(body: dict, scan_fn) -> list[str]:
 
 # ── Response walker (upstream → client) ───────────────────────────────────
 
-def unmask_response(body: dict, vault: Vault, secret_resolver) -> dict:
+def unmask_response(body: dict, vault: Vault, secret_resolver,
+                    on_unresolved=None) -> dict:
     """Walk an OpenAI Chat Completions response, unmask text content
-    and resolve tool_call.function.arguments at the boundary."""
+    and resolve tool_call.function.arguments at the boundary.
+
+    apf-6dt: on_unresolved is the resolver's fail-loud hook — passed
+    straight through so a mangled REF token left literal in tool-call
+    arguments is reported (counts-only) at the proxy level."""
     out = dict(body)
     choices = body.get("choices")
     if not isinstance(choices, list):
         return out
     new_choices: list[dict] = []
     for choice in choices:
-        new_choices.append(_unmask_choice(choice, vault, secret_resolver))
+        new_choices.append(
+            _unmask_choice(choice, vault, secret_resolver, on_unresolved))
     out["choices"] = new_choices
     return out
 
 
-def _unmask_choice(choice: dict, vault: Vault, secret_resolver) -> dict:
+def _unmask_choice(choice: dict, vault: Vault, secret_resolver,
+                   on_unresolved=None) -> dict:
     out = dict(choice)
     msg = choice.get("message")
     if isinstance(msg, dict):
@@ -186,14 +193,15 @@ def _unmask_choice(choice: dict, vault: Vault, secret_resolver) -> dict:
                 msg["reasoning_content"], vault)
         if isinstance(msg.get("tool_calls"), list):
             new_msg["tool_calls"] = [
-                _resolve_tool_call(tc, vault, secret_resolver)
+                _resolve_tool_call(tc, vault, secret_resolver, on_unresolved)
                 for tc in msg["tool_calls"]
             ]
         out["message"] = new_msg
     return out
 
 
-def _resolve_tool_call(tc: dict, vault: Vault, secret_resolver) -> dict:
+def _resolve_tool_call(tc: dict, vault: Vault, secret_resolver,
+                       on_unresolved=None) -> dict:
     out = dict(tc)
     fn = tc.get("function")
     if not isinstance(fn, dict):
@@ -205,7 +213,8 @@ def _resolve_tool_call(tc: dict, vault: Vault, secret_resolver) -> dict:
         args = json.loads(args_raw)
     except json.JSONDecodeError:
         return out
-    resolved = resolve_tool_call_args(args, vault, secret_resolver=secret_resolver)
+    resolved = resolve_tool_call_args(args, vault, secret_resolver=secret_resolver,
+                                      on_unresolved=on_unresolved)
     out["function"] = {**fn, "arguments": json.dumps(resolved, ensure_ascii=False)}
     return out
 
@@ -257,9 +266,13 @@ class OpenAISSERewriter:
     that should be held). flush() yields any final held content.
     """
 
-    def __init__(self, vault: Vault, secret_resolver=None) -> None:
+    def __init__(self, vault: Vault, secret_resolver=None,
+                 on_unresolved=None) -> None:
         self.vault = vault
         self.secret_resolver = secret_resolver
+        # apf-6dt: fail-loud hook for unresolved mangled REF tokens —
+        # passed through to resolve_tool_call_args at emit time.
+        self.on_unresolved = on_unresolved
         # Per-choice text-buffer + per-(choice,tool_index) tool-call accumulator
         self.text_held: dict[int, str] = {}
         self.reasoning_held: dict[int, str] = {}  # apf-8pz
@@ -377,6 +390,7 @@ class OpenAISSERewriter:
                 continue
             resolved = resolve_tool_call_args(
                 args, self.vault, secret_resolver=self.secret_resolver,
+                on_unresolved=self.on_unresolved,
             )
             chunk = {
                 "choices": [{
