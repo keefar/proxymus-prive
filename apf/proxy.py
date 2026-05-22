@@ -436,6 +436,9 @@ def _unmask_response_body(body: dict, vault: Vault) -> dict:
                 "input": resolve_tool_call_args(
                     part.get("input", {}), vault,
                     secret_resolver=_make_secret_resolver(vault),
+                    # apf-6dt: fail-loud — count unresolved mangled tokens
+                    # per session so an operator can see token mangling.
+                    on_unresolved=vault.note_unresolved,
                 ),
             })
         else:
@@ -497,6 +500,12 @@ async def health() -> dict:
         "detector": _DETECTOR.name if _DETECTOR else None,
         "active_sessions": len(_VAULTS),
         "upstream": ANTHROPIC_UPSTREAM,
+        # apf-6dt: process-wide total of fail-loud unresolved-mangled-token
+        # events across all live sessions. Counts only — a non-zero value
+        # signals an upstream model is mangling REF tokens; per-session
+        # detail is on /v1/sessions and /v1/sessions/{id}/status.
+        "unresolved_tokens": sum(v.unresolved_count()
+                                 for v in _VAULTS.values()),
     }
 
 
@@ -763,7 +772,8 @@ async def _stream_messages(
     body, not an SSE stream — wrapping it in a StreamingResponse would hand
     the client a misleading HTTP 200. The real status + body is surfaced
     instead."""
-    rewriter = SSERewriter(vault, secret_resolver=_make_secret_resolver(vault))
+    rewriter = SSERewriter(vault, secret_resolver=_make_secret_resolver(vault),
+                           on_unresolved=vault.note_unresolved)
 
     client = httpx.AsyncClient(timeout=300.0)
     request = client.build_request(
@@ -918,7 +928,8 @@ async def chat_completions(
             }},
         )
     rewritten = oai_unmask_response(
-        upstream_body, vault, _make_secret_resolver(vault)
+        upstream_body, vault, _make_secret_resolver(vault),
+        on_unresolved=vault.note_unresolved,
     )
     response_headers = _build_response_headers(session_id, vault)
     return JSONResponse(
@@ -935,6 +946,7 @@ async def _stream_chat_completions(
     and runs them through OpenAISSERewriter."""
     rewriter = OpenAISSERewriter(
         vault, secret_resolver=_make_secret_resolver(vault),
+        on_unresolved=vault.note_unresolved,
     )
 
     async def generate():

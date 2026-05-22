@@ -71,9 +71,14 @@ class SSERewriter:
             yield outbound_event
     """
 
-    def __init__(self, vault: Vault, secret_resolver=None) -> None:
+    def __init__(self, vault: Vault, secret_resolver=None,
+                 on_unresolved=None) -> None:
         self.vault = vault
         self.secret_resolver = secret_resolver
+        # apf-6dt: fail-loud hook for unresolved mangled REF tokens. The
+        # proxy passes vault.note_unresolved so token mangling becomes a
+        # counts-only, operator-visible signal.
+        self.on_unresolved = on_unresolved
         self.blocks: dict[int, _BlockState] = {}
 
     def _unmask(self, text: str) -> str:
@@ -162,6 +167,7 @@ class SSERewriter:
                         resolved = resolve_tool_call_args(
                             parsed, self.vault,
                             secret_resolver=self.secret_resolver,
+                            on_unresolved=self.on_unresolved,
                         )
                         resolved_json = json.dumps(resolved, ensure_ascii=False)
                     except json.JSONDecodeError:
