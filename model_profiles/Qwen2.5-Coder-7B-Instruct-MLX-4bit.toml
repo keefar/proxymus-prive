@@ -1,0 +1,19 @@
+# Model profile — Qwen2.5-Coder-7B-Instruct-MLX-4bit (apf-ao2)
+#
+# Shipped profile. One [[models]] table per file by convention, but
+# the loader accepts multiple. Keyed by the `model` field of the
+# incoming OpenAI/Anthropic request.
+
+[[models]]
+model = "Qwen2.5-Coder-7B-Instruct-MLX-4bit"
+token_passthrough = "mangles"
+recommended_strategy = "surrogate"
+injection_sensitivity = "low"
+notes = """
+apf-2qz: the 7B-4bit coder mangles opaque <REF_N> tokens — drops the
+underscore, renumbers, or paraphrases them — so opaque masking breaks
+round-trip restoration. Surrogate labels (plausible fake values) survive
+the model intact, so surrogate is the recommended strategy here. As a
+small model it does not show the dense-opaque-cluster injection-defence
+declines seen in larger models (apf-76s), hence injection_sensitivity=low.
+"""
