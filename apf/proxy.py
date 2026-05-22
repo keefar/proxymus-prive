@@ -436,6 +436,9 @@ def _unmask_response_body(body: dict, vault: Vault) -> dict:
                 "input": resolve_tool_call_args(
                     part.get("input", {}), vault,
                     secret_resolver=_make_secret_resolver(vault),
+                    # apf-6dt: fail-loud — count unresolved mangled tokens
+                    # per session so an operator can see token mangling.
+                    on_unresolved=vault.note_unresolved,
                 ),
             })
         else:

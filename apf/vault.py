@@ -105,12 +105,15 @@ class Vault:
     def whitelist_size(self) -> int:
         return len(self._whitelist)
 
-    def note_unresolved(self) -> None:
+    def note_unresolved(self, _variant: str | None = None) -> None:
         """Record one fail-loud unresolved-mangled-token event (apf-6dt).
 
-        Counts-only by design: takes no argument, so the near-PII mangled
-        token text has nowhere to be stored. Suitable as the proxy's
-        `on_unresolved` callback for resolve_tool_call_args."""
+        Counts-only by design. The resolver's `on_unresolved` contract is
+        `Callable[[str], None]` — it passes the mangled token *variant*
+        string. That string can be near-PII, so this method accepts it
+        only to satisfy the callback signature and DELIBERATELY DISCARDS
+        it: nothing but the count is ever stored. Plug it straight into
+        resolve_tool_call_args(..., on_unresolved=vault.note_unresolved)."""
         with self._lock:
             self._unresolved_count += 1
 

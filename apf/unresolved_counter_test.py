@@ -47,12 +47,16 @@ def test_vault_note_unresolved_increments_count() -> None:
     assert v.unresolved_count() == 3 - 1  # two notes → count of 2
 
 
-def test_vault_note_unresolved_takes_no_token_text() -> None:
-    """note_unresolved is counts-only — it accepts no argument, so the
-    near-PII mangled-token text has nowhere to be stored."""
+def test_vault_note_unresolved_discards_token_text() -> None:
+    """note_unresolved satisfies the resolver's Callable[[str], None]
+    contract but is counts-only — the near-PII mangled-token variant it
+    is handed is discarded, never stored."""
     v = Vault()
-    v.note_unresolved()  # must work with zero positional args
-    assert v.unresolved_count() == 1
+    v.note_unresolved()                       # zero-arg call works
+    v.note_unresolved("REF_99@secret.example")  # variant-arg call works
+    assert v.unresolved_count() == 2
+    # The variant text must not be retained anywhere on the vault.
+    assert "REF_99@secret.example" not in repr(vars(v))
 
 
 def test_vault_summary_carries_unresolved_count() -> None:
