@@ -442,6 +442,27 @@ async def health() -> dict:
     }
 
 
+@app.get("/v1/sessions")
+async def list_sessions() -> dict:
+    """List active session ids with their counts-only vault summaries.
+
+    The per-session endpoints below are all keyed by session id, but a
+    client driven through apf that sends no `x-apf-session` header gets an
+    `anon-<uuid>` it never sees — leaving its session impossible to inspect
+    (apf-c1b, surfaced during Hermes end-to-end testing). This endpoint
+    makes live sessions discoverable. Each summary is `vault.summary()` —
+    counts only, no values, no surface tokens — the same data as
+    `/v1/sessions/{id}/status`, safe to surface.
+    """
+    return {
+        "count": len(_VAULTS),
+        "sessions": [
+            {"session_id": sid, "summary": vault.summary()}
+            for sid, vault in _VAULTS.items()
+        ],
+    }
+
+
 @app.get("/v1/sessions/{session_id}/audit")
 async def session_audit(session_id: str) -> dict:
     """Return audit entries for a session. Empty unless APF_AUDIT_LOG=1
