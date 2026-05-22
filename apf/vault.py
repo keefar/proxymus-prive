@@ -85,6 +85,14 @@ class Vault:
         # Populated by inline `!raw VALUE` markers and the
         # POST /v1/sessions/{id}/whitelist endpoint.
         self._whitelist: set[str] = set()
+        # apf-6dt: count of fail-loud unresolved-mangled-token events for
+        # this session. A mangled REF token (the `REF`+digit shape a weak
+        # upstream model produces) whose ID was never minted is left
+        # literal by the resolver and reported via its on_unresolved hook.
+        # We keep COUNTS ONLY — the unresolved token text can be near-PII,
+        # so it is never stored; the count is the operator-visible signal
+        # that the upstream model is mangling tokens.
+        self._unresolved_count: int = 0
         self._lock = Lock()
 
     def add_whitelist(self, value: str) -> None:
@@ -96,6 +104,19 @@ class Vault:
 
     def whitelist_size(self) -> int:
         return len(self._whitelist)
+
+    def note_unresolved(self) -> None:
+        """Record one fail-loud unresolved-mangled-token event (apf-6dt).
+
+        Counts-only by design: takes no argument, so the near-PII mangled
+        token text has nowhere to be stored. Suitable as the proxy's
+        `on_unresolved` callback for resolve_tool_call_args."""
+        with self._lock:
+            self._unresolved_count += 1
+
+    def unresolved_count(self) -> int:
+        """Number of unresolved-mangled-token events seen this session."""
+        return self._unresolved_count
 
     def _unique_surrogate(self, gen: Callable[[], str], original: str) -> str:
         """Draw from `gen` until the surrogate collides with nothing —
@@ -215,6 +236,9 @@ class Vault:
             "per_tier": per_tier,
             "per_label": per_label,
             "third_party": third_party,
+            # apf-6dt: fail-loud unresolved-mangled-token events. Counts
+            # only — the token text (near-PII) is never stored or surfaced.
+            "unresolved": self._unresolved_count,
         }
 
     def __len__(self) -> int:
