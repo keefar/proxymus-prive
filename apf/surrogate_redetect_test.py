@@ -36,7 +36,7 @@ def _detector(monkeypatch, *needles: str) -> None:
 
 
 def test_whole_surrogate_not_remasked(monkeypatch) -> None:
-    monkeypatch.setattr(proxy, "SURROGATE_LABELS_CONFIG", frozenset({"EMAIL"}))
+    monkeypatch.setattr(proxy, "SURROGATE_LABELS_OVERRIDE", frozenset({"EMAIL"}))
     vault = Vault()
     _seed_surrogate(vault, "anna@real.de", "claudia@fake.de")
     _detector(monkeypatch, "claudia@fake.de")
@@ -48,7 +48,7 @@ def test_whole_surrogate_not_remasked(monkeypatch) -> None:
 def test_partial_surrogate_fragment_not_remasked(monkeypatch) -> None:
     # the detector flags a fragment of the surrogate (e.g. its domain) —
     # it overlaps the surrogate range and must be dropped too
-    monkeypatch.setattr(proxy, "SURROGATE_LABELS_CONFIG", frozenset({"EMAIL"}))
+    monkeypatch.setattr(proxy, "SURROGATE_LABELS_OVERRIDE", frozenset({"EMAIL"}))
     vault = Vault()
     _seed_surrogate(vault, "anna@real.de", "claudia@fake.de")
     _detector(monkeypatch, "fake.de")
@@ -58,7 +58,7 @@ def test_partial_surrogate_fragment_not_remasked(monkeypatch) -> None:
 
 
 def test_genuine_pii_alongside_a_surrogate_still_masked(monkeypatch) -> None:
-    monkeypatch.setattr(proxy, "SURROGATE_LABELS_CONFIG", frozenset())
+    monkeypatch.setattr(proxy, "SURROGATE_LABELS_OVERRIDE", frozenset())
     vault = Vault()
     _seed_surrogate(vault, "anna@real.de", "claudia@fake.de")
     # a real, not-yet-seen e-mail must still be masked
