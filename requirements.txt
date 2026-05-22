@@ -1,0 +1,22 @@
+# agent-privacy-filter — runtime dependencies.
+# Verified against Python 3.13 on Apple Silicon (the PoC target).
+#
+#   python3.13 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+#   .venv/bin/python -m apf.proxy
+#
+# Versions are pinned to what the green test suite runs against.
+
+# Proxy runtime
+fastapi==0.136.1
+uvicorn==0.47.0
+httpx==0.28.1
+
+# Detector ensemble (MLX-hosted) — Apple Silicon only.
+# mlx-lm pulls in mlx; transformers hosts the GLiNER / Presidio NER path.
+mlx==0.31.2
+mlx-lm==0.31.3
+transformers==5.1.0
+
+# Test suite:  .venv/bin/python -m pytest apf/ benchmarks/
+pytest==9.0.3

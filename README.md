@@ -1,19 +1,22 @@
 # agent-privacy-filter
 
-**Status (2026-05-21):** working PoC, end-to-end. FastAPI proxy speaks
+**Status (2026-05-22):** working PoC, end-to-end. FastAPI proxy speaks
 Anthropic Messages **and** OpenAI Chat Completions, SSE streaming wired,
-opaque `<REF_N>` masking with stable per-session IDs, secret resolver
-hook at the tool-call boundary, a regex + Presidio + GLiNER ensemble
-detector, endpoint trust map, off-by-default audit-log scaffold. 155
-tests, all green (`.venv/bin/python -m pytest apf/ benchmarks/`). Smoke
-runner spins the proxy in-process (`.venv/bin/python -m apf.manual_smoke`).
+opaque `<REF_N>` (or per-model surrogate) masking with stable per-session
+IDs, secret resolver hook at the tool-call boundary, a regex + Presidio +
+GLiNER ensemble detector, endpoint trust map, off-by-default audit-log
+scaffold. 225 tests, all green (`.venv/bin/python -m pytest apf/
+benchmarks/`). Smoke runner spins the proxy in-process
+(`.venv/bin/python -m apf.manual_smoke`).
 
-What still needs work: daily-driver validation in a real agent (target:
-Claude Code, with [Hermes](https://hermes-agent.nousresearch.com/) +
-[oMLX](https://omlx.ai/) as the all-local test substrate), detector
-precision tuning, audit-log persistence, and the implicit-PII UX
-confirmation flag. [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §9 has
-the honest open-issues list.
+What still needs work: detector precision tuning (`PERSON` false
+positives), audit-log persistence, and the implicit-PII UX confirmation
+flag. Daily-driver validation through a real agent is done —
+[Hermes](https://hermes-agent.nousresearch.com/) → apf →
+[oMLX](https://omlx.ai/), end to end (see
+[`docs/sessions/`](docs/sessions/)).
+[`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §9 has the honest
+open-issues list.
 
 A local privacy filter for coding agents (Claude Code, Cursor, Aider, Codex,
 Hermes, …) that detects personal information in outgoing traffic, swaps it
@@ -90,14 +93,16 @@ apf/                          # filter runtime
   vault.py                    # per-session vault, stable <REF_N> IDs
   resolver.py + secrets.py    # tool-call-boundary resolution (the differentiator)
   surrogates.py               # opt-in plausible-fake substitution (apf-okt)
+  model_profiles.py           # per-model token-handling profiles (apf-qnl)
   explainer.py                # system-prompt note explaining <REF_N> to the model
   sse.py / openai_shape.py    # streaming + OpenAI shape adapter
   endpoint_policy.py          # trust map (loopback + mDNS + cloud APIs)
   audit_log.py                # off-by-default in-memory ring buffer
   local_only.py               # never-forward refusal pathway (v1)
   demo.py / manual_smoke.py   # standalone + in-process smoke runners
-  *_test.py                   # pytest suite (155 tests, run with benchmarks/)
-benchmarks/                   # detector ensemble adapters + benchmark harness
+  *_test.py                   # pytest suite (225 tests, run with benchmarks/)
+benchmarks/                   # detector adapters, benchmark + model-conformance harness
+model_profiles/               # shipped per-model token-handling profiles (TOML, apf-qnl)
 fixtures/                     # PII fixtures (DE+EN, public + private)
 tools/                        # ai4privacy corpus builders
 scripts/                      # over-filter eval + dfta upstream check
@@ -119,7 +124,11 @@ docs/
 ## Running
 
 ```bash
-# tests (155, sub-second)
+# one-time setup (Python 3.13, Apple Silicon)
+python3.13 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# tests (225, sub-second)
 .venv/bin/python -m pytest apf/ benchmarks/
 
 # standalone demo: detector → mask → simulated round-trip → restore
@@ -134,17 +143,13 @@ docs/
 
 ## Next steps
 
-1. **Daily-driver validation** — run a real coding agent through apf with a
-   realistic workload, measure over-filter rate against the
-   [over-filter-eval methodology](docs/OVER-FILTER-EVAL.md). Target stack
-   for local loopback: Hermes (NousResearch) → apf → oMLX (Apple Silicon
-   MLX inference server) — no cloud dependency, full proxy + filter
-   visibility. See [`docs/sessions/`](docs/sessions/) for the test plan.
-2. **Detector precision tuning** — `PERSON` false positives are the
+1. **Detector precision tuning** — `PERSON` false positives are the
    largest remaining lever; see [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §8.
-3. **Audit log v2** — disk persistence + Keychain encryption + retention
+2. **Audit log v2** — disk persistence + Keychain encryption + retention
    policy for the v1 in-memory scaffold.
+3. **Grow the model-profile registry** — community-contributed per-model
+   profiles via the conformance harness (`benchmarks/model_conformance.py`).
 
 ## License
 
-Undecided. MIT or Apache-2.0 are the two candidates if this reaches release.
+[MIT](LICENSE).

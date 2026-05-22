@@ -10,7 +10,11 @@ am Tool-Call-Boundary aus dem lokalen Env / Vault wieder eingesetzt.
 
 - Apple Silicon Mac (für MLX-Modelle nicht zwingend — wir benutzen
   PyTorch+MPS für GLiNER+Presidio).
-- Python venv eingerichtet (`.venv/`).
+- Python 3.13 + venv mit installierten Abhängigkeiten:
+  ```bash
+  python3.13 -m venv .venv
+  .venv/bin/pip install -r requirements.txt
+  ```
 - Ein Authentifizierungs-Mechanismus für die Cloud-API:
   - **API-Key-Modus** (klassisch): Setze `ANTHROPIC_API_KEY` im Client.
     Der Proxy reicht den `x-api-key`-Header transparent weiter.
