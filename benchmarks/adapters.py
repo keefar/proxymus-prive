@@ -135,6 +135,70 @@ class RegexBaseline:
             r"NPM|PYPI|DOCKER)_TOKEN)"
             r"\s*[=:]\s*([\"']?)([^\"'\n\r]+?)\2(?=\s|$|;|,)")),
 
+        # ---- Crypto & financial (apf-6ql) -----------------------------
+        # Listed BEFORE the base64 CREDENTIAL catch-all so a 32+-char
+        # base58 / 0x-hex address lands at FINANCIAL (tier A), not
+        # CREDENTIAL (tier C). All gold-labelled FINANCIAL in ai4privacy.
+        #
+        # Ethereum (and EVM-chain) addresses: 0x + exactly 40 hex chars.
+        ("FINANCIAL", re.compile(
+            r"\b0x[0-9a-fA-F]{40}\b")),
+
+        # Bitcoin / Litecoin legacy base58 addresses: lead char 1 or 3,
+        # then 24-38 base58 chars (alphabet excludes 0 O I l). Length
+        # window 25-39 covers every address in the fixture set. The
+        # leading word-boundary keeps it from biting into longer tokens;
+        # the trailing boundary is a non-base58 lookahead.
+        ("FINANCIAL", re.compile(
+            r"\b[13][a-km-zA-HJ-NP-Z1-9]{24,38}(?![a-km-zA-HJ-NP-Z1-9])")),
+
+        # IBAN — spaced *or* unspaced. Country (2 letters) + 2 check
+        # digits + 11-30 alphanumerics (some national IBANs carry
+        # letters in the BBAN). Spaces optional between any group.
+        ("FINANCIAL", re.compile(
+            r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b")),
+
+        # Bare card-shaped numbers: 13-19 contiguous digits. Long runs of
+        # digits are rarely benign; 13 is the shortest real card length.
+        # MASKEDNUMBER (16-digit, gold NOTE_SENSITIVE) tier-matches this
+        # since both labels are tier A.
+        ("FINANCIAL", re.compile(
+            r"\b\d{13,19}\b")),
+
+        # Account numbers: bare 6-12 digit run, but ONLY when anchored by
+        # an account keyword (matching a standalone short number outright
+        # is a precision disaster). Group 1 is the number.
+        ("FINANCIAL", re.compile(
+            r"\b(?:account(?:\s+number)?|konto(?:nummer)?|"
+            r"abrechnungsreferenz|iban)\b[^\d\n]{0,12}(\d{6,12})\b",
+            re.IGNORECASE)),
+
+        # Amounts: a number that is *financially* shaped — either
+        #   (a) preceded by a currency symbol / sign / currency word, or
+        #   (b) carrying a k/m/b magnitude suffix, or
+        #   (c) written with thousands separators + decimals, or
+        #   (d) a plain decimal immediately followed by an ISO-4217 code.
+        # A bare integer with no currency context is deliberately NOT
+        # matched (precision). Group 1 is the numeric body.
+        #
+        # (a) currency symbol / sign / lead-letter prefix immediately
+        #     before the number (the ai4privacy synth set prefixes amounts
+        #     with symbols incl. non-ASCII ones, Cyrillic 'лв', or a stray
+        #     capital letter). The prefix is consumed but not in group 1.
+        ("FINANCIAL", re.compile(
+            r"(?:[$€£¥₹₽₩₺₴₦₱₪฿௹؋៛₭]|[A-ZЀ-ӿ]{1,3})"
+            r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?[kmb]?)\b")),
+        # (b) k/m/b magnitude suffix on a decimal/integer:
+        ("FINANCIAL", re.compile(
+            r"\b(\d+(?:[.,]\d+)?[kmb])\b")),
+        # (c) thousands-separated decimal (1.234,56 / 1,234.56):
+        ("FINANCIAL", re.compile(
+            r"(\d{1,3}(?:[.,]\d{3})+[.,]\d{2})\b")),
+        # (d) plain decimal directly followed by a 3-letter ISO-4217-style
+        #     currency code — the code makes it precision-safe.
+        ("FINANCIAL", re.compile(
+            r"\b(\d+[.,]\d{2,})\s?(?=[A-Z]{3}\b)")),
+
         # Long base64-shaped values (≥32 chars), with optional `=` padding —
         # the catch-all for "looks like a secret blob".
         # Anchored on whitespace/quote/punct boundary to avoid grabbing
@@ -142,10 +206,6 @@ class RegexBaseline:
         ("CREDENTIAL", re.compile(
             r"(?:^|[\s\"'=:>])([A-Za-z0-9+/]{32,}={0,2})(?=$|[\s\"',;)])",
             re.MULTILINE)),
-
-        # IBAN (loose: starts with 2-letter country, ≥15 chars total).
-        ("FINANCIAL", re.compile(
-            r"\b[A-Z]{2}\d{2}(?:\s?\d{4}){2,5}\s?\d{0,4}\b")),
 
         # Existing — moved after the new Tier-C patterns to let the more
         # specific ones win the overlap dedup.
