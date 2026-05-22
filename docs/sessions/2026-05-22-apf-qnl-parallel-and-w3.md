@@ -115,7 +115,27 @@ packaged library).
   tuning) — both beads are explicitly brainstorm-gated ("OPEN for
   brainstorm with user"); left untouched, they need a design conversation.
 
+## 5. Recall verification + detector quick wins (`apf-1oy`)
+
+The user asked to verify the `recall >= 0.95` constraint and look for
+improvement potential. A differentiated benchmark analysis: tier-equality
+recall is **~0.82** on the hand-crafted fixtures, **~0.75** micro-averaged
+(incl. ai4privacy) — no German/English gap. The 0.95 figure was
+aspirational and is unreachable with the current span-NER ensemble;
+CLAUDE.md's constraint bullet was corrected to say so. Not a release gate
+(user-ratified: "the system can only be as good as it is").
+
+False-negative analysis split the misses into a genuine ceiling (implicit /
+paraphrased PII — needs a generative detector) and fixable gaps. The
+fixable gaps became four beads; `apf-6ql` (the recall-safe regex quick
+wins) was done immediately — crypto + financial regexes and looser
+HOSTNAME/PATH regexes lifted combined tier-recall 0.751 → 0.780, precision
+also up. The APPOINTMENT part was investigated and reverted (GLiNER returns
+fragments too narrow to score) — moved to `apf-3qq`.
+
 ## State at session end
 
-main green (238 tests), working tree clean. apf running, wired to oMLX.
-`.beads/issues.jsonl` is now tracked in git (user request).
+main green (267 tests), working tree clean. apf running, wired to oMLX.
+`.beads/issues.jsonl` tracked in git. 14 beads closed this session; 5 open
+— all either owner-decision / brainstorm-gated (`apf-6la`, `apf-auw`,
+`apf-hiq`) or lower-priority detector tuning (`apf-zac`, `apf-3qq`).
