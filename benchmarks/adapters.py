@@ -212,10 +212,36 @@ class RegexBaseline:
         ("EMAIL", re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")),
         ("PHONE", re.compile(r"\+\d{1,3}[\s-]?(?:\d{1,4}[\s-]?){2,4}\d{2,4}")),
         ("IP", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
+        # PATH — three shapes (apf-6ql loosening), Tier-B:
+        #   (1) `~`-rooted paths: ~/dir/file, ~/.ssh/key
+        #   (2) any absolute POSIX path with >=2 segments: /seg/seg...
+        #       (was: only a fixed /Users|home|opt|... prefix list —
+        #       missed /data/raw/...). Requiring two segments keeps a
+        #       lone `/` or a bare-root `/etc` (rare) from over-firing.
+        #   (3) bare relative DIRECTORY paths only: a leading word
+        #       segment then `/`, with optional further segments, ending
+        #       in `/` (e.g. `src/`). Restricted to the trailing-slash
+        #       directory form on purpose — matching `word/word` would
+        #       swallow dates (`7/02`) and user-agent tokens
+        #       (`Mozilla/5.0`), a precision collapse seen in the
+        #       ai4privacy benchmark during apf-6ql.
         ("PATH", re.compile(
-            r"(?:^|[\s\"'(=])(/(?:Users|home|opt|srv|var|etc|usr)/[^\s\"'(),]+)")),
+            r"(?:^|[\s\"'(=])(~(?:/[^\s\"'(),]+)+)")),
+        ("PATH", re.compile(
+            r"(?:^|[\s\"'(=])(/[A-Za-z0-9][^\s\"'(),]*(?:/[^\s\"'(),]*)+)")),
+        ("PATH", re.compile(
+            r"(?:^|[\s\"'(=])([A-Za-z][\w.-]*/(?:[\w.-]+/)*)"
+            r"(?=$|[\s\"'(),]|&&)")),
+        # HOSTNAME — Tier-B. Two cases:
+        #   (1) 3-part FQDN host.tld.tld (pre-existing).
+        #   (2) 2-part host on an internal-network TLD (.lokal/.local/
+        #       .internal/.invalid) — apf-6ql. The 2-part TLD set is kept
+        #       to non-public, non-filename suffixes so a sentence-final
+        #       `notes.txt` is not mistaken for a host.
         ("HOSTNAME", re.compile(
             r"\b[a-z][\w-]*\.[\w.-]+\.(?:com|de|org|internal|lokal|local|invalid)\b")),
+        ("HOSTNAME", re.compile(
+            r"\b[a-z][\w-]*\.(?:lokal|local|internal|invalid)\b")),
     ]
 
     # Patterns whose match-group structure differs: which group holds the
