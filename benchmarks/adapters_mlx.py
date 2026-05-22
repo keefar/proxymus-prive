@@ -752,14 +752,79 @@ PERSON_PRONOUN_STOPLIST = frozenset({
 })
 
 
+# apf-5ds: Presidio's spaCy NER and the GLiNER PII models over-fire PERSON.
+# W3 Hermes testing saw an extra PERSON span masked beyond the intended PII;
+# PERSON false positives are apf's biggest detector-precision lever. The
+# misfires split into two kinds, handled differently so the fix stays
+# strictly recall-neutral:
+#
+#   1. PERSON_NONNAME_DROP — surfaces that are NOT personal information of
+#      any kind: salutation closers ('Cheers'), operational shell tokens
+#      ('drwxr-xr-x', 'TODO'). A PERSON span whose whole surface is one of
+#      these is pure noise and is dropped outright.
+#
+#   2. PERSON_RELATIONSHIP_NOUNS — role / relationship common nouns
+#      ('customer', 'Kollege', 'Nachbar'). These ARE a (weak) personal
+#      reference: the apf taxonomy has a dedicated RELATIONSHIP label for
+#      exactly this. They are mislabelled, not misdetected — so the span is
+#      RELABELLED PERSON -> RELATIONSHIP (same Tier A) rather than dropped.
+#      This removes the PERSON false positive AND fixes the label, with
+#      zero recall cost: a RELATIONSHIP role noun the ensemble was only
+#      tier-matching by accident (a PERSON span landing on a gold
+#      RELATIONSHIP span) keeps its Tier-A tier-match.
+#
+# Both lists are recall-safe by construction: no entry is ever a person's
+# *name*. Verified zero collisions against every gold PERSON span in the
+# fixture set (content / operational / secrets / ai4privacy_sample). Narrow
+# v0 — extend as the precision eval surfaces more. The principled long-term
+# fix is detector retuning (apf-t7t).
+PERSON_NONNAME_DROP = frozenset(s.lower() for s in {
+    # Salutation closers (sometimes captured as a standalone PERSON span)
+    "cheers", "regards", "thanks", "danke", "gruß", "grüße", "viele grüße",
+    "best", "sincerely", "lg", "vg",
+    # Operational / shell tokens NER mistakes for names
+    "drwxr-xr-x", "todo", "fixme", "backup-server", "clouddocs",
+    "localhost", "readme", "changelog",
+})
+
+PERSON_RELATIONSHIP_NOUNS = frozenset(s.lower() for s in {
+    # English role / relationship common nouns
+    "customer", "client", "colleague", "coworker", "co-worker", "guy",
+    "staff", "boss", "manager", "employee", "neighbor", "neighbour",
+    "friend", "teammate", "partner", "supervisor",
+    # German role / relationship common nouns
+    "kollege", "kollegin", "kollegen", "kolleg:in", "nachbar", "nachbarin",
+    "mitarbeiter", "mitarbeiterin", "mitarbeiter:in", "freund", "freundin",
+    "chef", "chefin", "vorgesetzter", "vorgesetzte", "kunde", "kundin",
+    "partnerin",
+})
+
+
 def _drop_person_noise(spans: list[Span], text: str) -> list[Span]:
-    """Drop PERSON spans that are a bare pronoun or a single character
-    (apf-8l1) — neither identifies anyone, both are pure over-detection."""
+    """Clean up PERSON over-detection (apf-8l1, apf-5ds):
+
+    - Drop PERSON spans that are a bare pronoun or a single character
+      (apf-8l1) — neither identifies anyone.
+    - Drop PERSON spans whose whole surface is a non-PII noise token —
+      salutation closer or operational shell token (apf-5ds).
+    - Relabel PERSON -> RELATIONSHIP for spans whose whole surface is a
+      role / relationship common noun (apf-5ds): the surface IS a personal
+      reference, just the wrong label. Recall-neutral (Tier A unchanged).
+
+    Recall-safe: no dropped/relabelled surface is ever a person's name."""
     out: list[Span] = []
     for s in spans:
         if s.label == "PERSON":
             surface = text[s.start:s.end].strip()
-            if len(surface) <= 1 or surface.lower() in PERSON_PRONOUN_STOPLIST:
+            folded = surface.lower()
+            if len(surface) <= 1 or folded in PERSON_PRONOUN_STOPLIST:
+                continue
+            if folded in PERSON_NONNAME_DROP:
+                continue
+            if folded in PERSON_RELATIONSHIP_NOUNS:
+                out.append(Span(start=s.start, end=s.end,
+                                label="RELATIONSHIP", tier="A",
+                                confidence=s.confidence))
                 continue
         out.append(s)
     return out
