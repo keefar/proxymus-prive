@@ -1,0 +1,19 @@
+# Model profile — Qwen3.6-35B-A3B-Holo3-Qwopus-mxfp4-mlx (apf-ao2)
+#
+# Shipped profile. Keyed by the `model` field of the incoming
+# OpenAI/Anthropic request.
+
+[[models]]
+model = "Qwen3.6-35B-A3B-Holo3-Qwopus-mxfp4-mlx"
+token_passthrough = "verbatim"
+recommended_strategy = "opaque"
+injection_sensitivity = "low"
+notes = """
+Verified to keep opaque <REF_N> tokens verbatim through reasoning and
+tool-call planning — round-trip restoration is reliable, so opaque is
+the recommended strategy (it is the safe default and avoids the
+robustness costs of surrogate values). injection_sensitivity is kept
+low for now; if dense opaque-token clusters trip this model's injection
+defences (apf-76s) raise it to high and the strategy selector (apf-dkf)
+can thin the clusters.
+"""
