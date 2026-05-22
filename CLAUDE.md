@@ -97,7 +97,11 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
 - Apple Silicon / MLX-first (PoC scope)
 - Combined filter RAM ≤ 4 GB (so it can co-exist with the user's 35B-4bit daily driver)
 - Stage-2 p95 latency ≤ 1.5 s
-- Detection recall ≥ 0.95 in **both** German and English on the fixture set
+- Detection recall: realistically **~0.75–0.82** tier-equality on the fixture set
+  (no German/English gap). The earlier "≥ 0.95" figure was aspirational — span-NER
+  tops out here; implicit / paraphrased PII needs a generative detector. **Not** a
+  release gate ("the system can only be as good as it is" — user, 2026-05-22).
+  See `apf-1oy` for the differentiated analysis and follow-on tuning beads.
 
 ## Key architectural premise
 
