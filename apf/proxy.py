@@ -64,6 +64,7 @@ from .resolver import resolve_tool_call_args
 from .secrets import make_default_store, resolver_for_vault
 from .sse import SSERewriter, format_sse_event, parse_sse_event
 from .masker import Span, mask_text, mask_outside_system_reminders
+from .model_profiles import STRATEGY_SURROGATE, profile_for_model
 from .surrogates import SURROGATE_LABELS
 from .vault import Vault
 
@@ -134,17 +135,26 @@ def _load_agent_terms() -> frozenset[str]:
 
 AGENT_TERMS = _load_agent_terms()
 
-# apf-okt: labels masked as plausible surrogate values instead of opaque
-# <REF_N>. Default empty → fully opaque (the apf-5ue default — no
-# behaviour change unless opted in). Set APF_SURROGATE_LABELS to a
-# comma-separated label list or "all". Always intersected with the
-# ratified hybrid set (surrogates.SURROGATE_LABELS — non-sensitive
-# Tier-A identifiers): naming a secret/sensitive category is ignored, so
-# a misconfiguration cannot surrogate something that must stay opaque.
-def _load_surrogate_labels() -> frozenset[str]:
-    raw = os.environ.get("APF_SURROGATE_LABELS", "").strip()
-    if not raw:
-        return frozenset()
+# apf-okt / apf-dkf: labels masked as plausible surrogate values instead
+# of opaque <REF_N>. The per-request choice normally comes from the
+# active model's profile (apf-dkf, see _resolve_surrogate_labels) — a
+# weak model gets surrogates, a strong one (or an unknown one) stays
+# opaque. APF_SURROGATE_LABELS is the *explicit override*: if the user
+# set it, it wins over the profile for every request.
+#
+# _load_surrogate_labels_override distinguishes "env var unset" (returns
+# None — defer to the profile) from "env var set" (returns a frozenset —
+# an explicit override, even when it intersects to empty). Set
+# APF_SURROGATE_LABELS to a comma-separated label list or "all". Always
+# intersected with the ratified hybrid set (surrogates.SURROGATE_LABELS —
+# non-sensitive Tier-A identifiers): naming a secret/sensitive category
+# is ignored, so a misconfiguration cannot surrogate something that must
+# stay opaque.
+def _load_surrogate_labels_override() -> frozenset[str] | None:
+    raw = os.environ.get("APF_SURROGATE_LABELS")
+    if raw is None or not raw.strip():
+        return None
+    raw = raw.strip()
     if raw.lower() == "all":
         return SURROGATE_LABELS
     requested = frozenset(t.strip().upper()
@@ -152,7 +162,32 @@ def _load_surrogate_labels() -> frozenset[str]:
     return requested & SURROGATE_LABELS
 
 
-SURROGATE_LABELS_CONFIG = _load_surrogate_labels()
+# frozenset → explicit override active; None → defer to model profile.
+SURROGATE_LABELS_OVERRIDE = _load_surrogate_labels_override()
+
+
+def _resolve_surrogate_labels(model: str | None) -> frozenset[str]:
+    """The per-request surrogate label set (apf-dkf).
+
+    1. If the user set APF_SURROGATE_LABELS, that explicit override wins
+       for every request, regardless of the model.
+    2. Otherwise the active model's profile decides: a profile whose
+       recommended_strategy is `surrogate` gets the ratified hybrid set
+       (surrogates.SURROGATE_LABELS); an `opaque` profile — and the
+       conservative default for any unknown / unprofiled model — gets
+       the empty set (fully opaque).
+
+    Tier-C secrets stay opaque regardless: the hybrid set holds only
+    non-sensitive Tier-A labels, and masker.mask_text re-checks each
+    span against surrogates.SURROGATE_LABELS, so a surrogate-eligible
+    label set can never surrogate a secret.
+    """
+    if SURROGATE_LABELS_OVERRIDE is not None:
+        return SURROGATE_LABELS_OVERRIDE
+    profile = profile_for_model(model)
+    if profile.recommended_strategy == STRATEGY_SURROGATE:
+        return SURROGATE_LABELS
+    return frozenset()
 
 # Per-session vaults. In production: bounded LRU with eviction; for PoC, dict.
 _VAULTS: dict[str, Vault] = {}
@@ -209,7 +244,13 @@ def _known_surrogate_spans(text: str, vault: Vault) -> list[tuple[int, int]]:
     return ranges
 
 
-def _mask_text(text: str, vault: Vault) -> str:
+def _mask_text(text: str, vault: Vault, model: str | None = None) -> str:
+    """Detect + mask PII in `text`. The opaque-vs-surrogate strategy is
+    resolved per request from the active upstream `model` profile
+    (apf-dkf) via _resolve_surrogate_labels — the explicit
+    APF_SURROGATE_LABELS override wins when set; an unknown model gets
+    the conservative opaque default. `model=None` keeps the legacy
+    global behaviour (the explicit override, or opaque)."""
     if not text or not _DETECTOR:
         return text
     cleaned = _extract_inline_bypass(text, vault)
@@ -234,7 +275,7 @@ def _mask_text(text: str, vault: Vault) -> str:
                            tier=s.tier,
                            confidence=getattr(s, "confidence", 1.0)))
     return mask_text(cleaned, spans, vault,
-                     surrogate_labels=SURROGATE_LABELS_CONFIG)
+                     surrogate_labels=_resolve_surrogate_labels(model))
 
 
 def _scan_text_for_locked(text: str) -> list[str]:
@@ -293,43 +334,45 @@ def _scan_body_for_locked(body: dict) -> list[str]:
     return seen
 
 
-def _mask_block(block: Any, vault: Vault) -> Any:
-    """Walk a content block (str or list of part-dicts) and mask text parts."""
+def _mask_block(block: Any, vault: Vault, model: str | None = None) -> Any:
+    """Walk a content block (str or list of part-dicts) and mask text parts.
+    `model` selects the per-request masking strategy (apf-dkf)."""
     if isinstance(block, str):
         return mask_outside_system_reminders(
-            block, lambda t: _mask_text(t, vault))
+            block, lambda t: _mask_text(t, vault, model))
     if isinstance(block, list):
-        return [_mask_part(part, vault) for part in block]
+        return [_mask_part(part, vault, model) for part in block]
     return block
 
 
-def _walk_json_mask(value: Any, vault: Vault) -> Any:
+def _walk_json_mask(value: Any, vault: Vault, model: str | None = None) -> Any:
     """Re-mask every string leaf of a JSON-shaped structure."""
     if isinstance(value, str):
-        return _mask_text(value, vault)
+        return _mask_text(value, vault, model)
     if isinstance(value, list):
-        return [_walk_json_mask(v, vault) for v in value]
+        return [_walk_json_mask(v, vault, model) for v in value]
     if isinstance(value, dict):
-        return {k: _walk_json_mask(v, vault) for k, v in value.items()}
+        return {k: _walk_json_mask(v, vault, model) for k, v in value.items()}
     return value
 
 
-def _mask_part(part: dict, vault: Vault) -> dict:
+def _mask_part(part: dict, vault: Vault, model: str | None = None) -> dict:
     if part.get("type") == "text":
         # apf-xt5: <system-reminder> blocks are Claude Code harness
         # scaffolding, not user PII — skip them so the model still sees
         # its own instructions and tool names. Tool results below are
         # genuine data and stay fully masked.
         return {**part, "text": mask_outside_system_reminders(
-            part.get("text", ""), lambda t: _mask_text(t, vault))}
+            part.get("text", ""), lambda t: _mask_text(t, vault, model))}
     if part.get("type") == "tool_result":
         # Tool results coming back FROM the client TO the LLM also need
         # to be masked — they may contain PII (grep output, db rows, etc).
         content = part.get("content")
         if isinstance(content, str):
-            return {**part, "content": _mask_text(content, vault)}
+            return {**part, "content": _mask_text(content, vault, model)}
         if isinstance(content, list):
-            return {**part, "content": [_mask_part(p, vault) for p in content]}
+            return {**part,
+                    "content": [_mask_part(p, vault, model) for p in content]}
     if part.get("type") == "tool_use":
         # apf-uc1: a replayed assistant tool_use carries the value the
         # response path already resolved at the boundary. Re-mask its
@@ -338,7 +381,7 @@ def _mask_part(part: dict, vault: Vault) -> dict:
         # the model first emitted.
         inp = part.get("input")
         if isinstance(inp, (dict, list)):
-            return {**part, "input": _walk_json_mask(inp, vault)}
+            return {**part, "input": _walk_json_mask(inp, vault, model)}
     # apf-8pz: 'thinking' / 'redacted_thinking' and other part types pass
     # through unchanged — thinking blocks are signed and must round-trip
     # byte-exact (see _unmask_response_body).
@@ -401,19 +444,25 @@ def _unmask_response_body(body: dict, vault: Vault) -> dict:
 def _mask_request_body(body: dict, vault: Vault) -> dict:
     """Walk an Anthropic Messages API request and mask text + tool_result
     content. The top-level `system` field is skipped unless MASK_SYSTEM
-    is enabled (apf-lnr). Leave the rest untouched."""
+    is enabled (apf-lnr). Leave the rest untouched.
+
+    apf-dkf: the request's `model` field selects the masking strategy
+    (opaque vs. surrogate) for this request via the model-profile
+    registry — see _resolve_surrogate_labels."""
     out = dict(body)
+    model = body.get("model") if isinstance(body.get("model"), str) else None
     if MASK_SYSTEM:
         if isinstance(out.get("system"), str):
-            out["system"] = _mask_text(out["system"], vault)
+            out["system"] = _mask_text(out["system"], vault, model)
         elif isinstance(out.get("system"), list):
-            out["system"] = [_mask_part(p, vault) for p in out["system"]]
+            out["system"] = [_mask_part(p, vault, model)
+                             for p in out["system"]]
     if isinstance(out.get("messages"), list):
         new_messages = []
         for msg in out["messages"]:
             new_messages.append({
                 **msg,
-                "content": _mask_block(msg.get("content"), vault),
+                "content": _mask_block(msg.get("content"), vault, model),
             })
         out["messages"] = new_messages
     return out
@@ -812,8 +861,15 @@ async def chat_completions(
     if _OPENAI_UPSTREAM_POLICY == POLICY_OFF:
         masked = inbound
     else:
+        # apf-dkf: the request's `model` field selects the masking
+        # strategy for this request. openai_shape.mask_request keeps its
+        # (text, vault) masker-callback contract — bind the model here.
+        oai_model = (inbound.get("model")
+                     if isinstance(inbound.get("model"), str) else None)
         masked = oai_mask_request(
-            inbound, vault, _mask_text, mask_system=MASK_SYSTEM,
+            inbound, vault,
+            lambda t, v: _mask_text(t, v, oai_model),
+            mask_system=MASK_SYSTEM,
         )
         if _audit_enabled():
             _AUDIT_LOG.record(session_id, vault.summary())
