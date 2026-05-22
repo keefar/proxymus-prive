@@ -51,9 +51,29 @@ def test_org_masked_when_skip_labels_cleared(monkeypatch) -> None:
     assert any(e.label == "ORG" for e in vault.all_entries())
 
 
+def test_filename_skipped_by_default(monkeypatch) -> None:
+    """apf-j4w: a bare generic filename is detected but not masked —
+    masking it adds vault noise and makes filenames indistinguishable to
+    the model (the W3 Hermes comprehension thrash)."""
+    class _Stub:
+        name = "stub"
+
+        def detect(self, text: str):
+            i = text.index("notes.txt")
+            return [Span(start=i, end=i + 9, label="FILENAME",
+                         tier="B", confidence=1.0)]
+    monkeypatch.setattr(proxy, "_DETECTOR", _Stub())
+    monkeypatch.setattr(proxy, "SKIP_LABELS", frozenset({"ORG", "FILENAME"}))
+    vault = Vault()
+    out = proxy._mask_text("write it to notes.txt", vault)
+    assert "notes.txt" in out, "FILENAME must pass through raw by default"
+    assert "<REF_" not in out
+    assert all(e.label != "FILENAME" for e in vault.all_entries())
+
+
 def test_load_skip_labels_default(monkeypatch) -> None:
     monkeypatch.delenv("APF_SKIP_LABELS", raising=False)
-    assert proxy._load_skip_labels() == frozenset({"ORG"})
+    assert proxy._load_skip_labels() == frozenset({"ORG", "FILENAME"})
 
 
 def test_load_skip_labels_empty_masks_everything(monkeypatch) -> None:

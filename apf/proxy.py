@@ -101,12 +101,21 @@ MASK_SYSTEM = os.environ.get("APF_MASK_SYSTEM", "0") != "0"
 # OpenAI) where masking yields ~zero privacy gain and breaks the prompt
 # ('write a Stripe client' with <REF_N> is nonsense). Genuinely sensitive
 # org-ish content (employer, asylum/abuse-related orgs) is covered by other
-# labels / the locked-category set. Override with APF_SKIP_LABELS (comma-
-# separated); set APF_SKIP_LABELS= (empty) to mask everything including ORG.
+# labels / the locked-category set.
+#
+# apf-j4w: FILENAME is opt-out by default too. A bare generic filename
+# ('contact.txt', 'main.py') is not user-PII — and masking it does active
+# harm beyond vault noise: every filename collapses to an indistinguishable
+# opaque token, so the model loses track of *which* file it is operating on
+# and thrashes ('I wrote contact.txt but the user asked for contact.txt' —
+# observed in W3 Hermes testing). PATH is NOT skipped — a path genuinely
+# leaks usernames / project structure ('/Users/<realname>/...'). Override
+# with APF_SKIP_LABELS (comma-separated); set APF_SKIP_LABELS= (empty) to
+# mask everything including ORG and FILENAME.
 def _load_skip_labels() -> frozenset[str]:
     raw = os.environ.get("APF_SKIP_LABELS")
     if raw is None:
-        return frozenset({"ORG"})
+        return frozenset({"ORG", "FILENAME"})
     return frozenset(t.strip() for t in raw.split(",") if t.strip())
 
 
