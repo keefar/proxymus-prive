@@ -80,8 +80,42 @@ Tooling added: `GET /v1/sessions` (`apf-c1b`) — lists active session ids +
 counts-only summaries, so anon sessions (a client with no `x-apf-session`
 header, e.g. Hermes) become inspectable.
 
+## 4. Autonomous backlog sweep
+
+The user then asked to work the rest of the backlog down autonomously.
+
+- **`apf-qnl` epic completed** — `apf-vh8` (conformance harness) + `apf-dkf`
+  (per-request strategy selection) shipped via a second `--parallel` run.
+- **`apf-j4w`** — FILENAME joins ORG in the default skip-labels set. A bare
+  generic filename is detected but not masked: masking collapsed every
+  filename to one indistinguishable token and made the model thrash.
+- **`apf-6dt`** — the resolver `on_unresolved` hook is wired at all four
+  `resolve_tool_call_args` call sites; a counts-only per-session counter
+  surfaces token-mangling via the status / sessions / healthz endpoints.
+- **`apf-hrc`** — release-readiness low bar: `LICENSE` (MIT), `requirements.txt`
+  (the project had no dependency manifest), README honesty refresh.
+- **`apf-5ds`** — PERSON false positives: a non-name post-filter lifted
+  PERSON precision 0.618 → 0.756 (FPs 21 → 11) with recall held.
+
+Suite went 182 → 238 green over the sweep.
+
+Decisions made autonomously: licence = MIT (fits the profile-contribution
+model); FILENAME skipped, not surrogated (the apf-1f6 ORG precedent);
+`requirements.txt` over `pyproject.toml` (the project is an app, not a
+packaged library).
+
+## Open / needs the user
+
+- **`apf-1oy`** (filed) — the benchmark reports tier-equality recall ~0.79
+  DE / ~0.85 EN, below the project's stated `recall >= 0.95` hard
+  constraint. Either the constraint is a different metric / fixture set,
+  or it is a genuine shortfall — needs verifying; potentially a release
+  blocker.
+- **`apf-auw`** (endpoint routing) and **`apf-hiq`** (crowd-improvable
+  tuning) — both beads are explicitly brainstorm-gated ("OPEN for
+  brainstorm with user"); left untouched, they need a design conversation.
+
 ## State at session end
 
-main green (182 tests). apf running, wired to oMLX. Epic `apf-qnl` half
-done — `apf-vh8` + `apf-dkf` now unblocked and ready. Open precision
-threads: `apf-j4w` (FILENAME), `apf-hrc` (PERSON false positives).
+main green (238 tests), working tree clean. apf running, wired to oMLX.
+`.beads/issues.jsonl` is now tracked in git (user request).
