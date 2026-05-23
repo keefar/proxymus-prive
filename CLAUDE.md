@@ -13,12 +13,12 @@ incoming responses. **Target hardware:** M5 MacBook Air, 32 GB unified memory.
 Completions, both streaming), MLX detector ensemble, vault round-trip, tool-call
 boundary resolution — shipped with a green test suite. Past the research stage.
 
-**Delivery constraint (apf-dtq, 2026-05-22):** routing subscription Claude Code
-through apf is blocked by Anthropic policy — it refuses proxied subscription
-OAuth. First agent target is now **Hermes + OpenAI-compatible** agents; the
-Claude path stays in-tree, marked, re-enableable. The proxy and the whole filter
-are unaffected for OpenAI-compatible / local upstreams. See
-`docs/sessions/2026-05-22-apf-dtq-strategy.md`.
+**Delivery constraint (apf-dtq, 2026-05-22):** routing some hosted-agent
+subscription tokens through apf is currently not viable — those tokens are
+verified against direct-from-vendor request patterns and refuse proxied OAuth.
+First agent target is therefore **Hermes + OpenAI-compatible** agents; the
+hosted-agent path stays in-tree, marked, re-enableable. The proxy and the
+whole filter are unaffected for OpenAI-compatible / local upstreams.
 
 ## Where to look first
 
@@ -26,16 +26,17 @@ are unaffected for OpenAI-compatible / local upstreams. See
 2. **`docs/HOW-IT-WORKS.md`** — user-facing pipeline walk-through + honest ledger of
    difficulties (resolved and open) with `apf-*` references. Best single overview of
    what the filter does and where it's weak.
-3. **`docs/MODEL-EVALUATION.md`** — current dossier on the detector-model evaluation,
-   recommended engine, tradeoffs, and what's still worth tuning. **Start here for the
-   "where are we with the model layer" question.**
-4. **`docs/sessions/`** — chronological session logs; latest one is always the best entry
-   point for "what was decided and why"
-5. **`docs/research/EXISTING-SOLUTIONS.md`** — survey of similar projects, capability matrix,
+3. **`docs/research/EXISTING-SOLUTIONS.md`** — survey of similar projects, capability matrix,
    identifies the actual gap this project addresses
-6. **`docs/research/RESEARCH-NOTES.md`** — consolidated technical findings
-7. **`docs/MODELS.md`** — candidate models + benchmark plan
+4. **`docs/research/RESEARCH-NOTES.md`** — consolidated technical findings
+5. **`docs/MODELS.md`** — candidate models + benchmark plan
+6. **`docs/MODEL-PROFILES.md`** — model-profile contract + how to contribute a profile
+7. **`docs/OVER-FILTER-EVAL.md`** — methodology for the precision/utility trade-off
 8. **`docs/ARCHITECTURE.md`** — design options, open questions, decision log
+9. **`docs/INTEGRATION.md`** — wiring the proxy into client tools
+
+Detailed evaluation dossiers, session logs, and per-issue decision narratives
+live outside the public repo (kept locally; see `.gitignore` for the list).
 
 **Code map gotcha:** the detector ensemble is `benchmarks/adapters_mlx.py`
 (`EnsembleMaxAdapter`) — the proxy imports it from `benchmarks/`, not `apf/`.
@@ -73,18 +74,14 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
   real Claude Code (`claude -p`) through apf; tool-call behaviour on the cloud target
 - `scripts/apf_restart.sh [restart|stop|status]` — restart apf wired to a chosen
   OpenAI upstream (oMLX by default); lets a session restart the proxy itself
-- **Cloud-test routing — BLOCKED for Max-plan auth (apf-dtq, 2026-05-21):** routing
-  `claude -p` through apf to the real Anthropic API fails 100% with `429
-  rate_limit_error` ("Server is temporarily limiting requests"). This is **not** a
-  throttle and **not** burstiness — it is Anthropic policy (since ~April 2026):
-  Pro/Max **subscription OAuth** tokens are refused for non-first-party use, and a
-  proxy hop makes the request non-first-party (detected below the HTTP layer —
-  forwarding all headers + query does not help). Direct `claude -p` works; via-apf
-  does not. Cloud validation against real Claude needs an **Anthropic API key**
-  (metered billing works through proxies) or an agent-side integration. For
-  throttle-immune cloud-shaped validation use the **local oMLX rig**
-  (`toolcall_loopback --mode live`). `ANTHROPIC_CUSTOM_HEADERS="x-apf-session: <id>"`
-  still pins one vault if a working auth path exists.
+- **Cloud-test routing — note on hosted-agent subscription auth (apf-dtq):**
+  hosted-agent subscription tokens (the kind issued to an agent's first-party
+  client) may be rejected when proxied — they're verified against direct-from-
+  vendor request patterns. Cloud validation against such an endpoint needs a
+  metered API key instead (those work through proxies) or an agent-side
+  integration. For throttle-immune cloud-shaped validation use the **local
+  oMLX rig** (`toolcall_loopback --mode live`). `ANTHROPIC_CUSTOM_HEADERS=
+  "x-apf-session: <id>"` still pins one vault if a working auth path exists.
 - `.venv/bin/python -m benchmarks.run --adapter ensemble-max --fixtures <f>` — detector
   precision/recall/FP benchmark; result JSON lands in `benchmarks/results/` (gitignored)
 - `curl 127.0.0.1:8765/healthz` — detector status + active sessions + upstream
@@ -113,11 +110,11 @@ instead of using an existing solution.
 
 ## When in doubt
 
-- The latest `docs/sessions/*.md` log explains the *why* behind any given decision in
-  `ARCHITECTURE.md`. Read it before challenging a design choice.
 - The recommendation in `ARCHITECTURE.md` (from-scratch for PoC) is **subject to PoC
   validation** — not a permanent commitment. The decision log at the bottom of that file
   is empty on purpose; first entry will be after the benchmark.
+- `bd show <apf-id>` is the in-repo source of why-decisions for tracked issues. Per-decision
+  narrative beyond the bd notes lives outside the public repo (see `.gitignore`).
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->

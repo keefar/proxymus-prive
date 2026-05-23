@@ -209,7 +209,13 @@ def _parse_tool_call(raw: str) -> list[dict]:
 
 class AnonymizerSLMAdapter:
     name = "anonymizer-slm-1.7b-4bit"
-    mlx_path = "/Users/chris/.cache/huggingface/mlx-models/Anonymizer-1.7B-4bit"
+    # Local MLX-converted weights. Override with APF_ANONYMIZER_MLX_PATH if
+    # you cache models elsewhere (e.g. `~/Models/...`); otherwise the default
+    # is the standard HF cache layout used by `mlx_lm.convert`.
+    mlx_path = os.environ.get(
+        "APF_ANONYMIZER_MLX_PATH",
+        os.path.expanduser("~/.cache/huggingface/mlx-models/Anonymizer-1.7B-4bit"),
+    )
 
     def __init__(self, max_tokens: int = 400) -> None:
         self.max_tokens = max_tokens

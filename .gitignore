@@ -23,9 +23,20 @@ benchmarks/results/
 # content; keep them local even though the fixtures themselves are synthetic.
 docs/results/
 # Note: fixtures/*.jsonl IS committed (synthetic, see docs/MODELS.md).
-# Beads' .beads/issues.jsonl IS committed — a versioned snapshot of the
-# issue state alongside the code (the Dolt DB stays the source of truth;
-# this project has no Dolt remote, so the tracked export is the backup).
+
+# Pre-publish audit (apf-m7y, 2026-05-23): internal-only material
+# — kept locally, untracked from the public repo. To resurface any of
+# these for public release, remove from .gitignore + redact + re-add.
+.beads/issues.jsonl
+docs/sessions/
+docs/THREAT-MODEL-PRIVATE.md
+docs/INDIVIDUAL-PRIVACY-FAILURES.md
+docs/COVERAGE-AUDIT.md
+docs/DESIGN-AUDIT-LOG-V2.md
+docs/DESIGN-LOCAL-ONLY-ROUTING.md
+docs/ANTHROPIC-FEATURE-REQUEST.md
+docs/PROJECT-CONVENTIONS.md
+docs/MODEL-EVALUATION.md
 
 # Editor / OS
 .DS_Store
