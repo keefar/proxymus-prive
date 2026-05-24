@@ -23,7 +23,7 @@ Last login: Mon May 12 09:14:22 2026 from ⟦IP|10.0.4.118⟧
 
 ## id: de-bash-01 lang=de bucket=operational notes="ssh session, mixed German+command output"
 
-⟦PATH|~/projekte/datenpipeline⟧ $ scp report.csv ⟦PERSON|chris⟧@⟦HOSTNAME|backup-nas.lokal⟧:⟦PATH|/srv/backups/2026-05/⟧
+⟦PATH|~/projekte/datenpipeline⟧ $ scp report.csv ⟦PERSON|alice⟧@⟦HOSTNAME|backup-nas.lokal⟧:⟦PATH|/srv/backups/2026-05/⟧
 Datei wird kopiert (4.2 MB) ...
 abgeschlossen. Verbinde nun mit ⟦HOSTNAME|monitor-02.lokal⟧ (⟦IP|192.168.1.42⟧) zur Kontrolle.
 

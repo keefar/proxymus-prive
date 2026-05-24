@@ -31,9 +31,9 @@ def test_reminder_block_kept_verbatim() -> None:
 
 def test_reminder_content_survives_untouched() -> None:
     # the whole point: PII-shaped tokens inside a reminder are not masked
-    sr = "<system-reminder>tool Grep, path /Users/chris/x</system-reminder>"
+    sr = "<system-reminder>tool Grep, path /Users/alice/x</system-reminder>"
     out = mask_outside_system_reminders(sr, _upper)
-    assert "Grep" in out and "/Users/chris/x" in out
+    assert "Grep" in out and "/Users/alice/x" in out
 
 
 def test_user_text_after_reminder_is_masked() -> None:

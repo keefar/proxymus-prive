@@ -40,7 +40,7 @@ Examples of correct flow:
 
 ### Tier B — Operational identifiers (LLM may need to reference them; tool calls almost always need the original)
 
-What lives here: filesystem paths (`/Users/chris/...`), filenames that encode user
+What lives here: filesystem paths (`/Users/<you>/...`), filenames that encode user
 identity, hostnames, local + public IP addresses, machine-specific URLs.
 
 Handling: mask, but the **tool-call boundary resolver is the load-bearing piece** —
@@ -49,7 +49,7 @@ purely to "resolve only in response to user" because the agent's own actions dep
 resolution.
 
 Open sub-question: which subset of Tier B is *also* user-policy-configurable? Some users
-want `/Users/chris` masked end-to-end; others consider it harmless. The PoC will treat
+want `/Users/<you>` masked end-to-end; others consider it harmless. The PoC will treat
 all Tier B values as masked by default and let policy loosen later.
 
 ### Tier C — Secrets (LLM must never see the value)

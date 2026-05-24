@@ -93,7 +93,7 @@ CASES: list[dict[str, Any]] = [
     {
         "name": "tier_b_path",
         "lang": "any", "tier": "B",
-        "prompt": "Read the file at /Users/chris/work/secrets.env and summarise.",
+        "prompt": "Read the file at /Users/alice/work/secrets.env and summarise.",
         "must_have": [], "min_total": 1,
     },
     {

@@ -29,9 +29,9 @@ def test_resolves_token_in_plain_string() -> None:
 
 
 def test_resolves_token_embedded_in_larger_string() -> None:
-    vault, tok = _vault_with(("/Users/chris/notes.txt", "PATH"))
-    out = resolve_tool_call_args(f"cat {tok['/Users/chris/notes.txt']}", vault)
-    assert out == "cat /Users/chris/notes.txt"
+    vault, tok = _vault_with(("/Users/alice/notes.txt", "PATH"))
+    out = resolve_tool_call_args(f"cat {tok['/Users/alice/notes.txt']}", vault)
+    assert out == "cat /Users/alice/notes.txt"
 
 
 def test_resolves_nested_dict_and_list() -> None:

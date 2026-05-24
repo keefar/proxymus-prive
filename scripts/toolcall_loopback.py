@@ -156,9 +156,9 @@ SCENARIOS: list[dict[str, Any]] = [
     {
         "name": "bash_path", "lang": "de", "tier": "B",
         "tools": [RUN_BASH], "tool_name": "run_bash",
-        "prompt": ("Lies die Datei /Users/chris/work/notes.txt und fasse "
+        "prompt": ("Lies die Datei /Users/alice/work/notes.txt und fasse "
                    "sie zusammen."),
-        "pii": ["/Users/chris/work/notes.txt"],
+        "pii": ["/Users/alice/work/notes.txt"],
         "args_template": {"command": "cat {tok0}"},
         "tool_result": "Datei {pii0} gelesen. Log an {probe} gesendet.",
     },
