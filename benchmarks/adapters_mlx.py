@@ -836,6 +836,53 @@ def _drop_person_noise(spans: list[Span], text: str) -> list[Span]:
     return out
 
 
+# apf-zac: GLiNER over-fires ORG on generic capitalised common nouns
+# ('team', 'gym', 'lab', 'startup', 'HR', 'Kardiologie', 'Physiotherapie',
+# 'Zahnarztpraxis'). ORG is in the default SKIP_LABELS set so the privacy
+# impact is limited, but the false positives pollute vault counts and
+# benchmark precision. Drop ORG spans whose entire surface is a generic
+# common noun. Recall-safe by construction: every entry below is a
+# common noun, never an organisation's proper name. A multi-token span
+# carrying a real org name ('HR Berlin GmbH') is untouched — only
+# whole-surface matches fire.
+ORG_COMMON_NOUN_STOPLIST = frozenset(s.lower() for s in {
+    # English generic ORG-shaped common nouns
+    "team", "gym", "lab", "startup", "hr", "office", "school",
+    "department", "agency", "ministry", "board", "committee",
+    "council", "court", "association", "society", "foundation",
+    "institute", "union", "club", "company", "firm", "group",
+    # German generic ORG-shaped common nouns
+    "labor", "praxis", "klinik", "krankenhaus", "apotheke",
+    "behörde", "amt", "ministerium", "schule", "universität",
+    "institut", "bibliothek", "museum", "theater", "kino",
+    "hochschule", "fachhochschule", "verein", "verband",
+    "gesellschaft", "kanzlei", "abteilung", "ausschuss",
+    "kommission", "agentur", "firma", "unternehmen", "büro",
+    # Medical / professional specialisms — GLiNER labels these ORG when
+    # they appear as standalone domain terms; they are field names, not
+    # organisation names. A real org would be 'Praxis für Kardiologie XYZ',
+    # which has a longer multi-token surface and is unaffected.
+    "kardiologie", "physiotherapie", "zahnarztpraxis", "radiologie",
+    "neurologie", "orthopädie", "dermatologie", "psychiatrie",
+    "psychotherapie", "gynäkologie", "urologie", "pädiatrie",
+    "onkologie", "innere medizin", "allgemeinmedizin",
+})
+
+
+def _drop_org_noise(spans: list[Span], text: str) -> list[Span]:
+    """Drop ORG spans whose whole surface is a generic common noun
+    (apf-zac). Recall-safe by construction: no entry is ever a real
+    organisation name."""
+    out: list[Span] = []
+    for s in spans:
+        if s.label == "ORG":
+            surface = text[s.start:s.end].strip().lower()
+            if surface in ORG_COMMON_NOUN_STOPLIST:
+                continue
+        out.append(s)
+    return out
+
+
 def _merge_spans(span_groups: Sequence[list[Span]],
                  text: str | None = None) -> list[Span]:
     """Union, dedupe, longest-wins. Earlier groups win on label when nested.
@@ -904,6 +951,7 @@ def _merge_spans(span_groups: Sequence[list[Span]],
     if text is not None:
         result = _drop_health_stoplist(result, text)
         result = _drop_person_noise(result, text)
+        result = _drop_org_noise(result, text)
     return result
 
 
