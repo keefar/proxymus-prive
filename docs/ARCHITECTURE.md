@@ -473,8 +473,7 @@ detector, vault, tool-call-boundary resolution — is auth-agnostic.
   OpenAI-compatible ecosystem. Develop and release there.
 - The Anthropic path stays in the tree, marked blocked; re-enable trigger =
   an Anthropic policy change or a found solution.
-- A feature request to Anthropic (`docs/ANTHROPIC-FEATURE-REQUEST.md`) asks
-  for a sanctioned mechanism.
+- A feature request to Anthropic (drafted locally) asks for a sanctioned
+  mechanism.
 
-Full reasoning + workstreams: `docs/sessions/2026-05-22-apf-dtq-strategy.md`
-(and `2026-05-21-surrogate-validation.md` for the investigation trail).
+Full reasoning + workstreams live in internal session logs (kept local).

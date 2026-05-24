@@ -105,7 +105,8 @@ regex's high-precision secret hits in the merge. The decision log in
 
 ### Where the numbers stand
 
-Engine: `ensemble-max`. Measured on two sets (`docs/MODEL-EVALUATION.md`):
+Engine: `ensemble-max`. Measured on two sets (full evaluation dossier
+kept locally; benchmark rig is in `benchmarks/run.py`):
 
 | Set | Tier-recall | DE | EN | p95 latency | RAM |
 |---|:--:|:--:|:--:|:--:|:--:|
@@ -308,8 +309,9 @@ Surrogate works, but it is strictly less robust than opaque on every count
 above — and the model-refusal problem it was meant to solve is already
 mitigated by the explainer (§7). So opaque stays the default; surrogate is a
 per-label opt-in for cases where natural-text fidelity matters more than the
-robustness margin. The full opaque-vs-surrogate evidence is in
-[`docs/sessions/2026-05-21-surrogate-validation.md`](sessions/2026-05-21-surrogate-validation.md).
+robustness margin. The full opaque-vs-surrogate evidence is in the local
+session logs; the tests in `apf/openai_shape_test.py` and the loopback rigs
+(`scripts/toolcall_loopback.py`) cover the resulting behaviour.
 
 ---
 
@@ -331,7 +333,8 @@ An honest list — these are limits, not oversights:
   in-house; an estimated 10–20% of spans are debatable edge cases (is
   "Freitag" PII in this context?). The numbers are directionally sound, not
   audit-grade. The detector layer is good — but "safe" as an absolute claim it
-  is not. `docs/MODEL-EVALUATION.md` has the full "honesty box".
+  is not. The full per-label "honesty box" lives in the local evaluation
+  dossier; you can reproduce the headline numbers from `benchmarks/run.py`.
 
 ---
 
@@ -360,5 +363,6 @@ curl 127.0.0.1:8765/healthz
 curl 127.0.0.1:8765/v1/sessions/<id>/status
 ```
 
-The session log directory `docs/sessions/` records, chronologically, the *why*
-behind every decision referenced above.
+Decision narratives (per-issue *why* logs) are kept locally rather than in
+the public repo; the in-tree `apf-*` issue references in code comments
+point to the same decision IDs used in the local tracker.

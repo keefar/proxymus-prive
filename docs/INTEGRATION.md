@@ -224,8 +224,9 @@ siehe bd `apf-6l8`).
   Der Proxy selbst hat keinen Key, er reicht den Client-Header durch.
 - **PII kommt durch ohne Maskierung:** Detector hat sie verfehlt.
   `GET /v1/sessions/{id}/uncertain` zeigt was als low-confidence
-  markiert wurde. Für eindeutige Misses: in `docs/MODEL-EVALUATION.md`
-  schauen, ggf. Tier-C-Regex / GLiNER-Labels erweitern.
+  markiert wurde. Für eindeutige Misses: Benchmark gegen die Fixtures
+  laufen (`benchmarks/run.py`) und ggf. Tier-C-Regex / GLiNER-Labels
+  erweitern.
 - **Tool-Use schlägt fehl, weil Secrets fehlen:** Env-Var-Name muss mit
   dem Pattern matchen, das der Detector erkannte (`OPENAI_API_KEY`,
   `STRIPE_KEY`, etc). Sieht der Detector einen anderen KEY-Namen, brauchst

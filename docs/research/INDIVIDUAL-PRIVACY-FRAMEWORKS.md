@@ -300,12 +300,13 @@ catalog.
 
 **Recommended Phase 2 shape:**
 
-1. **Write a short "mapping doc"** — `docs/INDIVIDUAL-PRIVACY-FAILURES.md` —
-   that defines 8–12 IPF entries in OWASP style (title, harm chain, scenarios,
-   detection signals, mitigations), and for *each* entry includes a one-line
-   "Maps to: Solove[X], Lee2024[Y], CI-violation-of[Z]". This makes the
-   document an editorial, agent-scenario layer over an existing academic
-   spine rather than a competing catalog.
+1. **Write a short "mapping doc"** (kept locally as
+   `INDIVIDUAL-PRIVACY-FAILURES.md`) that defines 8–12 IPF entries in OWASP
+   style (title, harm chain, scenarios, detection signals, mitigations),
+   and for *each* entry includes a one-line "Maps to: Solove[X],
+   Lee2024[Y], CI-violation-of[Z]". This makes the document an editorial,
+   agent-scenario layer over an existing academic spine rather than a
+   competing catalog.
 2. **Adopt the Lee et al. 12-label vocabulary as the upper bound.** Every
    IPF must map to at least one Lee label. If it doesn't, either the label
    set needs extending (rare) or the IPF is not a real new risk.

@@ -1,11 +1,11 @@
 # agent-privacy-filter
 
-**Status (2026-05-22):** working PoC, end-to-end. FastAPI proxy speaks
+**Status (2026-05-24):** working PoC, end-to-end. FastAPI proxy speaks
 Anthropic Messages **and** OpenAI Chat Completions, SSE streaming wired,
 opaque `<REF_N>` (or per-model surrogate) masking with stable per-session
 IDs, secret resolver hook at the tool-call boundary, a regex + Presidio +
 GLiNER ensemble detector, endpoint trust map, off-by-default audit-log
-scaffold. 225 tests, all green (`.venv/bin/python -m pytest apf/
+scaffold. 279 tests, all green (`.venv/bin/python -m pytest apf/
 benchmarks/`). Smoke runner spins the proxy in-process
 (`.venv/bin/python -m apf.manual_smoke`).
 
@@ -13,8 +13,7 @@ What still needs work: detector precision tuning (`PERSON` false
 positives), audit-log persistence, and the implicit-PII UX confirmation
 flag. Daily-driver validation through a real agent is done —
 [Hermes](https://hermes-agent.nousresearch.com/) → apf →
-[oMLX](https://omlx.ai/), end to end (see
-[`docs/sessions/`](docs/sessions/)).
+[oMLX](https://omlx.ai/), end to end.
 [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §9 has the honest
 open-issues list.
 
@@ -110,16 +109,16 @@ docs/
   HOW-IT-WORKS.md             # pipeline walk-through + honest difficulties ledger
   ARCHITECTURE.md             # design + decision log
   MODELS.md                   # candidate models for the MLX detector
-  MODEL-EVALUATION.md         # current dossier on the detector layer
-  THREAT-MODEL-PRIVATE.md     # private-person taxonomy (79 rows) + §5 decisions
-  INDIVIDUAL-PRIVACY-FAILURES.md
-  COVERAGE-AUDIT.md
-  OVER-FILTER-EVAL.md
+  MODEL-PROFILES.md           # contributing a profile for your upstream model
+  OVER-FILTER-EVAL.md         # precision/utility evaluation methodology
   INTEGRATION.md              # how-to: wire an agent through apf
   research/EXISTING-SOLUTIONS.md
+  research/INDIVIDUAL-PRIVACY-FRAMEWORKS.md
   research/RESEARCH-NOTES.md
-  sessions/                   # chronological work logs
 ```
+
+(Detailed evaluation dossiers, threat-model notes, and chronological
+session logs are kept locally rather than in the public repo.)
 
 ## Running
 
@@ -128,7 +127,7 @@ docs/
 python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# tests (225, sub-second)
+# tests (279, sub-second)
 .venv/bin/python -m pytest apf/ benchmarks/
 
 # standalone demo: detector → mask → simulated round-trip → restore
