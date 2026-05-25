@@ -5,9 +5,10 @@ pick between the options below. Recommendation at the bottom; not yet executed.
 
 ## Constraints
 
-- **Initial test setup:** a fanless M-series MacBook Air with 32 GB unified
-  memory. The numbers below are scaled to this baseline; anything with
-  comparable MLX-capable Apple Silicon works.
+- **Host:** any Apple Silicon Mac (M1 or newer). The README
+  hardware-requirements table lists per-ensemble footprints; a low-end
+  8 GB host runs the fast ensemble, 16 GB the default, 32 GB the full
+  generative pass beside a local daily-driver LLM.
 - **Inference:** MLX on Apple Silicon (Python ecosystem)
 - **Detection budget:** ≤ 4 GB combined RAM, ≤ 1.5 s p95 stage-2 latency
 - **First agent target:** Hermes + the OpenAI-compatible ecosystem (Cursor,

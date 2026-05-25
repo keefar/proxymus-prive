@@ -7,7 +7,9 @@ Quick-orient for any Claude session entering this repo. Read top to bottom befor
 A local privacy filter for coding agents (Claude Code, Cursor, Aider, …) — intercepts
 outgoing traffic, detects PII via a small MLX-hosted model + deterministic detector,
 swaps it for stable placeholders before it leaves the machine, restores originals in
-incoming responses. **Target hardware:** M5 MacBook Air, 32 GB unified memory.
+incoming responses. **Target hardware:** any Apple Silicon Mac (M1 or
+newer); filter footprint stays ≤ 4 GB so it co-exists with a separate
+local LLM. The README hardware-requirements table is authoritative.
 
 **Current status:** working PoC. FastAPI proxy (Anthropic Messages + OpenAI Chat
 Completions, both streaming), MLX detector ensemble, vault round-trip, tool-call

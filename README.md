@@ -26,6 +26,26 @@ ever sent anywhere for detection.
 > the full reason. OpenAI-compatible agents (Hermes, Cursor, Aider,
 > Codex, Cline, local oMLX) are unaffected.
 
+## Hardware requirements
+
+proxymus runs on any Apple Silicon Mac — M1 or newer. It scales down
+to low-RAM configurations; pick the ensemble that fits your machine
+(switch by setting the adapter when running the proxy):
+
+| Ensemble                  | Roughly resident | What's in it                                                                | Comfortable on                                                       |
+|---------------------------|-----------------:|-----------------------------------------------------------------------------|----------------------------------------------------------------------|
+| `ensemble-fast`           |         ~600 MB | regex + GLiNER multi-PII                                                    | M1 / **8 GB Mac** — still leaves room for an editor, browser, agent  |
+| `ensemble-max` *(default)* |         ~1.5 GB | regex + Presidio + 2× GLiNER + locked-category regex                        | M-series / **16 GB Mac** — comfortable headroom for a local LLM      |
+| `ensemble-full`           |           ~3 GB | above **+** AnonymizerSLM 1.7 B (4-bit, MLX) — generative pass for implicit / paraphrased PII | M-series / **32 GB Mac** — fits beside a 35 B 4-bit daily-driver model |
+
+Combined filter footprint stays **≤ 4 GB** even at the full ensemble.
+On a 32 GB host with a 35 B 4-bit daily-driver model also loaded, the
+remaining headroom is still ≥ 8 GB.
+
+Linux / Windows are not first-class targets (MLX is Apple Silicon), but
+the regex + GLiNER + Presidio path runs on PyTorch + MPS / CPU and is
+portable in principle — not actively tested.
+
 **New here?** [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) walks the
 pipeline end to end and gives an honest ledger of what was hard to build
 and what is still unsolved.
@@ -88,13 +108,6 @@ None of them combine all four of the things this project is exploring:
 
 [ccl]: https://github.com/nicedreamzapp/claude-code-local
 [rm]: https://github.com/raullenchai/Rapid-MLX
-
-## Target hardware (PoC)
-
-A current-generation Apple Silicon Mac with 32 GB unified memory (the
-baseline used during development was an M-series MacBook Air). The filter
-runs alongside the user's existing local assistant; combined memory budget
-for filter models is ≤ 4 GB.
 
 ## Layout
 
