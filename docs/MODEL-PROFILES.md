@@ -85,7 +85,7 @@ model = "my-org/my-private-coder-finetune"
 token_passthrough = "mangles"
 recommended_strategy = "surrogate"
 injection_sensitivity = "low"
-notes = "Tested 2026-05 on M5/32GB. Opaque <REF_3> came back as 'REF 3' ~40% of the time, surrogate values survived intact."
+notes = "Tested 2026-05 on a 32 GB Apple Silicon Mac. Opaque <REF_3> came back as 'REF 3' ~40% of the time, surrogate values survived intact."
 ```
 
 ## Contributing a profile back to the project

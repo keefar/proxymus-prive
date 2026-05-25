@@ -1,4 +1,4 @@
-# agent-privacy-filter
+# proxymus-prive
 
 **Status (2026-05-24):** working PoC, end-to-end. FastAPI proxy speaks
 Anthropic Messages **and** OpenAI Chat Completions, SSE streaming wired,
@@ -80,8 +80,10 @@ None of them combine all four of the things this project is exploring:
 
 ## Target hardware (PoC)
 
-M5 MacBook Air, 32 GB unified memory. The filter runs alongside the user's existing local
-assistant; combined memory budget for filter models is ≤ 4 GB.
+A current-generation Apple Silicon Mac with 32 GB unified memory (the
+baseline used during development was an M-series MacBook Air). The filter
+runs alongside the user's existing local assistant; combined memory budget
+for filter models is ≤ 4 GB.
 
 ## Layout
 

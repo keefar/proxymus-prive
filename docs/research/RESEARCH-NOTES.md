@@ -82,7 +82,7 @@ tool — not just because of speed:
 
 The 35B stays the assistant. The filter is a small, dedicated model — or two (NER + SLM).
 
-## Hardware sanity check (M5 MacBook Air, 32 GB)
+## Hardware sanity check (Apple Silicon, 32 GB)
 
 - GLiNER (BERT-base-class NER, quantized ONNX): hundreds of MB, CPU/ANE
 - Small rewriter SLM 1.7–4B in 4-bit: ~1–3 GB on MLX

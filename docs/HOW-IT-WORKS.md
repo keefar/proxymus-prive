@@ -1,6 +1,7 @@
 # How the filter works — and where it gets hard
 
-A practical walk-through of the agent-privacy-filter (apf): what happens to a
+A practical walk-through of proxymus-prive (`apf` in code and tooling):
+what happens to a
 request, how the personal data is detected, and an honest ledger of the
 problems we hit building it and what we did about each one.
 

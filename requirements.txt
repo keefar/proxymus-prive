@@ -1,4 +1,4 @@
-# agent-privacy-filter — runtime dependencies.
+# proxymus-prive — runtime dependencies.
 # Verified against Python 3.13 on Apple Silicon (the PoC target).
 #
 #   python3.13 -m venv .venv

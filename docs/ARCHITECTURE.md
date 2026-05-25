@@ -5,7 +5,9 @@ pick between the options below. Recommendation at the bottom; not yet executed.
 
 ## Constraints
 
-- **Host:** M5 MacBook Air, 32 GB unified memory, fanless
+- **Initial test setup:** a fanless M-series MacBook Air with 32 GB unified
+  memory. The numbers below are scaled to this baseline; anything with
+  comparable MLX-capable Apple Silicon works.
 - **Inference:** MLX on Apple Silicon (Python ecosystem)
 - **Detection budget:** ≤ 4 GB combined RAM, ≤ 1.5 s p95 stage-2 latency
 - **First agent target:** Hermes + the OpenAI-compatible ecosystem (Cursor,

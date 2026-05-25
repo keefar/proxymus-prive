@@ -1,4 +1,4 @@
-# Project memory — agent-privacy-filter
+# Project memory — proxymus-prive
 
 Quick-orient for any Claude session entering this repo. Read top to bottom before acting.
 

@@ -1,41 +1,41 @@
-# Live-Integration Guide
+# Live integration guide
 
-Wie der PoC-Proxy mit Claude Code (oder einem anderen Anthropic-API-Client)
-verbunden wird. Nach diesem Setup laufen alle Anfragen durch den Filter:
-PII wird vor dem Versand zur Cloud maskiert, in der Antwort wieder
-zurückgesetzt, Tier-C-Secrets bleiben dem LLM gegenüber opak und werden
-am Tool-Call-Boundary aus dem lokalen Env / Vault wieder eingesetzt.
+How to wire the PoC proxy into Claude Code (or any other Anthropic-API
+client). After this setup, every request goes through the filter: PII is
+masked before it leaves for the cloud and restored in the response,
+Tier-C secrets stay opaque to the LLM and are re-inserted from the
+local env / vault at the tool-call boundary.
 
-## Voraussetzungen
+## Prerequisites
 
-- Apple Silicon Mac (für MLX-Modelle nicht zwingend — wir benutzen
-  PyTorch+MPS für GLiNER+Presidio).
-- Python 3.13 + venv mit installierten Abhängigkeiten:
+- An Apple Silicon Mac (not strictly required for the MLX models —
+  GLiNER + Presidio use PyTorch + MPS, so other GPUs work too).
+- Python 3.13 + a venv with the dependencies installed:
   ```bash
   python3.13 -m venv .venv
   .venv/bin/pip install -r requirements.txt
   ```
-- Ein Authentifizierungs-Mechanismus für die Cloud-API:
-  - **API-Key-Modus** (klassisch): Setze `ANTHROPIC_API_KEY` im Client.
-    Der Proxy reicht den `x-api-key`-Header transparent weiter.
-  - **OAuth-Modus** (Pro Max / Claude.ai-Login): Claude Code nutzt einen
-    OAuth-Token im `Authorization`-Header. Der Proxy reicht auch das durch.
-    Hinweis: nicht alle Clients respektieren `ANTHROPIC_BASE_URL`, wenn
-    sie OAuth-flow durchlaufen — bei Bedarf testen.
+- An authentication mechanism for the cloud API:
+  - **API-key mode** (classic): set `ANTHROPIC_API_KEY` on the client.
+    The proxy forwards the `x-api-key` header transparently.
+  - **OAuth mode** (Pro/Max / Claude.ai login): Claude Code uses an
+    OAuth token in the `Authorization` header. The proxy passes that
+    through too. Caveat: not every client respects `ANTHROPIC_BASE_URL`
+    during the OAuth flow — test before relying on it.
 
-## Proxy starten
+## Starting the proxy
 
 ```bash
-# Standard: port 8765, upstream api.anthropic.com
+# Default: port 8765, upstream api.anthropic.com
 .venv/bin/python -m apf.proxy
 
-# Eigener Port / Upstream zum Testen
+# Custom port / upstream for testing
 APF_PORT=9000 APF_UPSTREAM_BASE=http://localhost:8080 \
     .venv/bin/python -m apf.proxy
 ```
 
-Beim ersten Start lädt der Proxy alle Detector-Modelle (~10-15 s
-Aufwärmphase) und meldet dann "Application startup complete".
+On first start the proxy loads every detector model (~10–15 s warmup),
+then logs "Application startup complete".
 
 Healthcheck:
 
@@ -45,64 +45,63 @@ curl http://127.0.0.1:8765/healthz
 #  "upstream":"https://api.anthropic.com"}
 ```
 
-## Claude Code konfigurieren
+## Configuring Claude Code
 
 ```bash
-# Terminal A: Proxy läuft auf 127.0.0.1:8765
-# Terminal B: Claude Code mit dem Proxy als API-Endpoint starten
+# Terminal A: proxy running on 127.0.0.1:8765
+# Terminal B: start Claude Code with the proxy as its API endpoint
 
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8765
-export ANTHROPIC_API_KEY=<dein-key>   # falls API-Key-Modus
+export ANTHROPIC_API_KEY=<your-key>   # if you're in API-key mode
 claude
 ```
 
-Wenn alles korrekt verbunden ist, sollte Claude Code normal antworten,
-aber:
+If everything is wired correctly, Claude Code answers as usual, but:
 
-- Alle ausgehenden Texte mit erkannter PII werden maskiert (sichtbar
-  in den Proxy-Logs, falls `--log-level debug`).
-- Der `x-apf-session`-Header wird auf jede Antwort gesetzt — Claude Code
-  ignoriert ihn momentan, aber die Vault-State bleibt sauber per Session.
-- Tool-Use-Args werden bei der Rückgabe an den Client aus dem Vault
-  rückaufgelöst — Claude Code's Tool-Executor sieht echte Werte.
+- Every outgoing text with detected PII is masked (visible in the proxy
+  logs when running with `--log-level debug`).
+- The `x-apf-session` header is set on every response — Claude Code
+  ignores it for now, but the vault state stays cleanly partitioned per
+  session.
+- Tool-use args are resolved back from the vault on the way to the
+  client, so Claude Code's tool executor sees the real values.
 
-## Smoke-Helper: manueller End-to-End-Check
+## Smoke helper: manual end-to-end check
 
-`apf/manual_smoke.py` startet den Proxy, schickt eine Test-Anfrage mit
-PII-haltigem Inhalt, und meldet, ob die Maskierung sichtbar wurde
-beim Upstream. Setze einen Mock-Upstream oder zeige es kurz gegen einen
-echten Anthropic-Endpoint.
+`apf/manual_smoke.py` boots the proxy, sends a test request with
+PII-bearing content, and reports whether the masking made it through to
+the upstream. You can point it at a mock upstream or, briefly, at a real
+Anthropic endpoint.
 
 ```bash
-# Gegen Mock-Upstream (default):
+# Against the mock upstream (default):
 .venv/bin/python -m apf.manual_smoke
 
-# Gegen echte Anthropic-API (braucht API-Key):
+# Against the real Anthropic API (needs an API key):
 ANTHROPIC_API_KEY=sk-ant-... \
 APF_UPSTREAM_BASE=https://api.anthropic.com \
     .venv/bin/python -m apf.manual_smoke --live
 ```
 
-## Local-loopback testing (Hermes + oMLX + apf, kein Cloud)
+## Local-loopback testing (Hermes + oMLX + apf, no cloud)
 
-Für PoC-Validierung ohne Cloud-Abhängigkeit lässt sich der ganze Stack
-lokal auf Apple-Silicon zusammenstöpseln:
+For PoC validation without any cloud dependency, the whole stack can be
+wired together locally on Apple Silicon:
 
 ```
-Hermes Agent (CLI) ──▶ apf:8765 ──▶ oMLX:8000 ──▶ MLX-Modell
+Hermes Agent (CLI) ──▶ apf:8765 ──▶ oMLX:8000 ──▶ MLX model
                                           │
-                                          └── Vault, Detektor, Audit-Log
-                                              bleiben in apf
+                                          └── vault, detector, audit log
+                                              stay inside apf
 ```
 
-### Endpoint-Trust-Map Override (wichtig)
+### Endpoint trust-map override (important)
 
-Per Default klassifiziert apf `127.0.0.1` als **trusted local engine**
-(`POLICY_OFF` — keine Filterung; Begründung in
-`apf/endpoint_policy.py`). Das ist für Production sinnvoll (lokale
-Modelle brauchen keine Maskierung), aber **bricht den Test-Use-Case**
-— wenn du gegen ein lokales oMLX testen willst, *willst* du dass apf
-filtert. Konfig-Override anlegen:
+By default apf classifies `127.0.0.1` as a **trusted local engine**
+(`POLICY_OFF` — no filtering; rationale in `apf/endpoint_policy.py`).
+That is the right default in production (local models don't need
+masking), but **breaks the test use-case** — if you want to validate
+against a local oMLX, you *want* apf to filter. Drop a config override:
 
 ```bash
 mkdir -p ~/.config/apf
@@ -113,134 +112,131 @@ policy = "full"
 EOF
 ```
 
-Der Wert wird beim apf-Modulimport gelesen — also **apf neu starten**
-nach der Änderung. Verifikation: `/v1/sessions/<id>/status` zeigt nach
-einem Request mit PII einen nicht-leeren Vault.
+The value is read at module import time, so **restart apf** after the
+change. Verify: `/v1/sessions/<id>/status` shows a non-empty vault after
+the first PII-bearing request.
 
-### Apf für den Loopback starten
+### Starting apf for the loopback
 
 ```bash
 APF_OPENAI_UPSTREAM=http://127.0.0.1:8000 \
     .venv/bin/python -m apf.proxy
 ```
 
-### Hermes-Config (`~/.hermes/config.yaml`)
+### Hermes config (`~/.hermes/config.yaml`)
 
 ```yaml
 model:
   provider: custom
-  base_url: http://127.0.0.1:8765/v1   # apf, NICHT direkt oMLX
-  api_key: irrelevant-aber-pflicht
-  model: <exakte Model-ID wie oMLX sie zurückgibt unter /v1/models>
+  base_url: http://127.0.0.1:8765/v1   # apf, NOT oMLX directly
+  api_key: irrelevant-but-required
+  model: <exact model ID as oMLX returns it under /v1/models>
   max_tokens: 4096
 ```
 
-Achtung: `hermes model` (interaktiver Picker) überschreibt `base_url`
-auf den Direkt-Upstream — falls genutzt, danach
+Heads-up: `hermes model` (the interactive picker) overwrites `base_url`
+with the direct upstream. If you use it, follow up with
 `hermes config set model.base_url http://127.0.0.1:8765/v1`.
 
-### Bulk-Smoke
+### Bulk smoke
 
-`scripts/smoke_loopback.py` schickt 14 kuratierte Single-Turn-Requests
-durch apf (DE+EN, alle drei Tiers, Negativ-Case), liest pro Session
-den Vault-Status aus, und meldet pro Case ob die erwarteten
-Detector-Labels gefunden wurden plus ob das Modell mit Safety-Refusal
-geantwortet hat.
+`scripts/smoke_loopback.py` sends 14 curated single-turn requests
+through apf (DE + EN, all three tiers, plus a negative case), reads the
+vault state per session, and reports whether the expected detector
+labels showed up and whether the model returned a safety refusal.
 
 ```bash
-.venv/bin/python -m scripts.smoke_loopback             # alles
+.venv/bin/python -m scripts.smoke_loopback             # everything
 .venv/bin/python -m scripts.smoke_loopback --grep tier_c
-.venv/bin/python -m scripts.smoke_loopback --json      # JSONL-Output
+.venv/bin/python -m scripts.smoke_loopback --json      # JSONL output
 ```
 
-Erwarteter Output beim ersten erfolgreichen Run gegen
-Qwen2.5-Coder-7B-Instruct-MLX-4bit: 14/14 Vault-Assertions ✓,
-13/14 Model-Refusals (Qwen-spezifisches Safety-Verhalten —
-siehe bd `apf-6l8`).
+Expected output on the first successful run against
+Qwen2.5-Coder-7B-Instruct-MLX-4bit: 14/14 vault assertions ✓, 13/14
+model refusals (Qwen-specific safety behaviour — see bd `apf-6l8`).
 
-## Bekannte Constraints
+## Known constraints
 
-- **Auth-Pass-Through:** Der Proxy speichert keine Credentials. Was der
-  Client schickt, geht weiter. Wenn dein Client per OAuth läuft, klappt
-  das automatisch — vorausgesetzt der Client respektiert
-  `ANTHROPIC_BASE_URL`.
+- **Auth pass-through:** the proxy stores no credentials. Whatever the
+  client sends is forwarded. If the client uses OAuth, it works
+  automatically — provided the client respects `ANTHROPIC_BASE_URL`.
 
-- **OAuth-Refresh:** Wenn der Client OAuth-Token vor dem Schicken refresht
-  (z.B. Claude Code's interner Auth-Flow), passiert das *vor* dem Proxy.
-  Der Proxy sieht nur den finalen Token im Authorization-Header.
+- **OAuth refresh:** if the client refreshes its OAuth token before
+  sending (e.g. Claude Code's internal auth flow), that happens *before*
+  the proxy. The proxy only ever sees the final token in the
+  `Authorization` header.
 
-- **Streaming:** Voll unterstützt seit `apf-jfi`. Text-Tokens werden über
-  Chunk-Grenzen hinweg gepuffert; Tool-Use-Input-JSON wird akkumuliert
-  und am `content_block_stop`-Event in einem Schwung resolvt.
+- **Streaming:** fully supported since `apf-jfi`. Text tokens are
+  buffered across chunk boundaries; tool-use input JSON is accumulated
+  and resolved in one shot at the `content_block_stop` event.
 
-- **Pro-Max-Subscription:** Wenn du Claude Code per Pro-Max-Login nutzt
-  (kein expliziter API-Key), nutzt der Client wahrscheinlich OAuth. Ob
-  das mit `ANTHROPIC_BASE_URL` zusammenarbeitet, hängt vom genauen
-  Claude-Code-Build ab. Testen.
+- **Pro/Max subscription:** if you use Claude Code via the Pro/Max
+  login (no explicit API key), the client probably uses OAuth. Whether
+  that cooperates with `ANTHROPIC_BASE_URL` depends on the exact Claude
+  Code build. Test it.
 
-- **Secret-Store:** Default ist `EnvSecretStore` + `VaultFallbackStore`.
-  Für Production-Härte: `APF_VAULT_FALLBACK=0` setzen — dann werden
-  unbekannte Secrets bei Tool-Use nicht aus dem Vault aufgelöst sondern
-  bleiben ungesetzt (Tool muss explizit fehlschlagen statt einen Wert
-  einzusetzen den der Vault gesehen hat).
+- **Secret store:** the default is `EnvSecretStore` +
+  `VaultFallbackStore`. For production hardening, set
+  `APF_VAULT_FALLBACK=0` — unknown secrets at tool-use time will no
+  longer be resolved from the vault but stay unset (the tool must fail
+  explicitly rather than receive a value the vault has happened to see).
 
-- **System-Prompt-Maskierung (apf-lnr):** Default ist OFF —
-  `role=system` Messages (Anthropic `system`-Feld + OpenAI `messages[0]`
-  mit `role=system`) werden **nicht** maskiert. Begründung: control-plane
-  Prompts (Filter-Explainer, Agent-Persönlichkeit, Tool-Schemata) sind
-  meist PII-frei und würden ansonsten als false-positive-Baseline in
-  jedem Vault-Summary auftauchen. Wenn dein System-Prompt legitim
-  User-PII enthält (z.B. user-profile-fed Agents), `APF_MASK_SYSTEM=1`
-  setzen — dann läuft die Maskierung wie für andere Rollen auch.
-  Locked-Category-Refusal (apf-enr) prüft System-Messages **unabhängig**
-  vom Flag, der Safety-Net für Never-Forward-Kategorien bleibt aktiv.
+- **System-prompt masking (apf-lnr):** default is OFF — `role=system`
+  messages (Anthropic's `system` field + OpenAI `messages[0]` with
+  `role=system`) are **not** masked. Rationale: control-plane prompts
+  (filter explainer, agent persona, tool schemas) are usually PII-free
+  and would otherwise show up as a false-positive baseline in every
+  vault summary. If your system prompt legitimately contains user PII
+  (e.g. user-profile-fed agents), set `APF_MASK_SYSTEM=1` and masking
+  runs on system messages too. Locked-category refusal (apf-enr) checks
+  system messages **regardless** of the flag — the safety net for
+  never-forward categories stays active either way.
 
-- **Unmasker-Marker (apf-b3j, Debug):** `APF_UNMASK_MARKER`
-  hängt jedem vom Unmasker *tatsächlich* zurückaufgelösten Wert einen
-  Marker an — `APF_UNMASK_MARKER=✓` macht aus „anna müller" →
-  „anna müller✓". So sieht man im Test, ob der Round-Trip wirklich
-  stattfand oder ob ein Wert nur unmaskiert durchgerutscht ist (optisch
-  sonst identisch). Nur für Test/Debug — **nie in Produktion** (verändert
-  User-sichtbaren Text). Default leer = Output unverändert. Greift nur im
-  Text-Pfad, nicht in der Tool-Call-Resolver-Auflösung.
+- **Unmasker marker (apf-b3j, debug):** `APF_UNMASK_MARKER` appends a
+  marker to every value the unmasker actually resolved back —
+  `APF_UNMASK_MARKER=✓` turns "anna müller" into "anna müller✓". This
+  lets you tell whether the round-trip really happened or whether a
+  value just slipped through unmasked (visually identical otherwise).
+  Test/debug only — **never in production** (it changes user-visible
+  text). Default empty = output unchanged. Applies only on the text
+  path, not in the tool-call resolver.
 
-- **Skip-Labels (apf-1f6):** `APF_SKIP_LABELS` ist eine kommaseparierte
-  Liste von Detector-Labels, die zwar erkannt aber **nicht** maskiert
-  werden — der Wert geht roh durch. Default: `ORG`. Begründung: im
-  Coding-Agent-Kontext sind ORG-Mentions fast immer public software /
-  services (GitHub, Stripe, OpenAI) — Maskieren bringt ~null Privacy-
-  Gewinn und zerstört den Prompt (`<REF_N>`-API-Client statt
-  `Stripe`-API-Client). Genuin sensible Org-Bezüge (Arbeitgeber,
-  asyl-/gewalt-bezogene Orgs) sind über andere Labels bzw. die
-  Locked-Category-Liste abgedeckt. `APF_SKIP_LABELS=` (leer) maskiert
-  wieder alles inklusive ORG; `APF_SKIP_LABELS=ORG,DATE` erweitert die
-  Liste.
+- **Skip labels (apf-1f6):** `APF_SKIP_LABELS` is a comma-separated
+  list of detector labels that are detected but **not** masked — the
+  value passes through verbatim. Default: `ORG`. Rationale: in the
+  coding-agent context, ORG mentions are almost always public software
+  / services (GitHub, Stripe, OpenAI) — masking buys ~zero privacy and
+  wrecks the prompt (`<REF_N>` API client instead of `Stripe` API
+  client). Genuinely sensitive org references (employer, asylum-/
+  violence-related orgs) are covered by other labels or the
+  locked-category list. `APF_SKIP_LABELS=` (empty) masks everything
+  including ORG; `APF_SKIP_LABELS=ORG,DATE` extends the list.
 
 ## Troubleshooting
 
-- **"Connection refused" beim Client:** Proxy läuft nicht, oder Port
-  stimmt nicht. `curl http://127.0.0.1:8765/healthz` testen.
-- **"401 Unauthorized" vom Upstream:** API-Key fehlt oder ist falsch.
-  Der Proxy selbst hat keinen Key, er reicht den Client-Header durch.
-- **PII kommt durch ohne Maskierung:** Detector hat sie verfehlt.
-  `GET /v1/sessions/{id}/uncertain` zeigt was als low-confidence
-  markiert wurde. Für eindeutige Misses: Benchmark gegen die Fixtures
-  laufen (`benchmarks/run.py`) und ggf. Tier-C-Regex / GLiNER-Labels
-  erweitern.
-- **Tool-Use schlägt fehl, weil Secrets fehlen:** Env-Var-Name muss mit
-  dem Pattern matchen, das der Detector erkannte (`OPENAI_API_KEY`,
-  `STRIPE_KEY`, etc). Sieht der Detector einen anderen KEY-Namen, brauchst
-  du `EnvSecretStore(aliases={"DETECTED_NAME": "REAL_ENV_VAR"})`.
+- **"Connection refused" on the client:** proxy isn't running, or the
+  port doesn't match. Test with
+  `curl http://127.0.0.1:8765/healthz`.
+- **"401 Unauthorized" from the upstream:** API key missing or wrong.
+  The proxy itself holds no key — it just forwards the client header.
+- **PII slips through unmasked:** the detector missed it.
+  `GET /v1/sessions/{id}/uncertain` shows what was tagged as
+  low-confidence. For clean misses: run the benchmark against the
+  fixtures (`benchmarks/run.py`) and extend the Tier-C regex / GLiNER
+  labels as needed.
+- **Tool use fails because secrets are missing:** the env-var name has
+  to match the pattern the detector recognised (`OPENAI_API_KEY`,
+  `STRIPE_KEY`, etc.). If the detector sees a different KEY name, use
+  `EnvSecretStore(aliases={"DETECTED_NAME": "REAL_ENV_VAR"})`.
 
-## Pro-Max-Konkrete Anweisung
+## Pro/Max — concrete instructions
 
-Wenn du `claude.ai/code` via Pro-Max benutzt:
+If you use `claude.ai/code` via a Pro/Max account:
 
-1. Pro-Max-Login ist OAuth-basiert, kein API-Key.
-2. Auf der CLI sollte das vom `ANTHROPIC_BASE_URL` trotzdem akzeptiert
-   werden — Claude Code wandelt OAuth in `Authorization: Bearer ...`
-   um, was unser Proxy durchreicht.
-3. Falls Claude Code beim Setzen von `ANTHROPIC_BASE_URL` auf eine
-   andere URL erzwingen will dass die Cloud-Login-Domain übereinstimmt:
-   ggf. Issue beim Claude-Code-Projekt aufmachen oder API-Key-Modus
-   versuchen.
+1. Pro/Max login is OAuth-based, no API key.
+2. The CLI should still accept `ANTHROPIC_BASE_URL` — Claude Code
+   converts OAuth into `Authorization: Bearer ...`, which our proxy
+   forwards.
+3. If Claude Code refuses to accept a different `ANTHROPIC_BASE_URL`
+   because the cloud-login domain has to match: either file an issue on
+   the Claude Code project, or fall back to API-key mode.
