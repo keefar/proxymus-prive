@@ -1,5 +1,35 @@
 # proxymus-prive
 
+proxymus-prive is a local privacy filter for coding agents — Claude
+Code, Cursor, Aider, Codex, Hermes, and similar tools. It runs as a
+small proxy on your own machine and sits between the agent and the
+cloud LLM. Every outgoing request is inspected for personal
+information — names, addresses, file paths, API keys — and the
+sensitive bits are replaced with stable placeholders *before* the
+request leaves your machine. The cloud model only ever sees the
+placeholders; in the reply that comes back, the originals are put back
+in so you read your conversation normally. When the agent decides to
+run a tool (`grep`, a file read, an API call), the real value is
+plugged in only at that moment, so the cloud model never sees it
+through a back door either.
+
+Detection runs entirely on your machine — a small ensemble of regex,
+Microsoft Presidio, and GLiNER NER models on Apple Silicon. No text is
+ever sent anywhere for detection.
+
+> **Claude Code is currently API-key only.** You can route Claude
+> Code through proxymus when it authenticates with an
+> `ANTHROPIC_API_KEY` (the standard metered-billing path). It does
+> **not** work with a Pro/Max subscription login: Anthropic refuses
+> proxied subscription OAuth — see the 2026-05-22 entry in the
+> [decision log of `docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for
+> the full reason. OpenAI-compatible agents (Hermes, Cursor, Aider,
+> Codex, Cline, local oMLX) are unaffected.
+
+**New here?** [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) walks the
+pipeline end to end and gives an honest ledger of what was hard to build
+and what is still unsolved.
+
 **Status (2026-05-24):** working PoC, end-to-end. FastAPI proxy speaks
 Anthropic Messages **and** OpenAI Chat Completions, SSE streaming wired,
 opaque `<REF_N>` (or per-model surrogate) masking with stable per-session
@@ -16,25 +46,6 @@ flag. Daily-driver validation through a real agent is done —
 [oMLX](https://omlx.ai/), end to end.
 [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §9 has the honest
 open-issues list.
-
-A local privacy filter for coding agents (Claude Code, Cursor, Aider, Codex,
-Hermes, …) that detects personal information in outgoing traffic, swaps it
-for stable placeholders before it leaves the machine, and restores the
-original values in incoming responses. Detection runs entirely on the
-local machine — an ensemble of regex, Microsoft Presidio, and GLiNER NER
-models on Apple Silicon. No text is sent anywhere for detection.
-
-**New here?** [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) walks the pipeline
-end to end and gives an honest ledger of what was hard to build and what is
-still unsolved.
-
-> **Agent support, honestly:** the HTTP proxy works today for
-> OpenAI-compatible and local agents — Hermes, Cursor, Aider, Codex, Cline,
-> local models. Routing **Claude Code on a Free/Pro/Max subscription** is
-> currently **blocked by Anthropic's subscription-auth policy** (it refuses
-> proxied subscription OAuth) — see the 2026-05-22 entry in
-> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The Claude path stays in
-> the tree, ready to re-enable if that policy changes.
 
 ## Why another one?
 
