@@ -290,9 +290,9 @@ An alternative to opaque tokens: substitute a *plausible fake* instead —
 reads more naturally to the model and should provoke fewer refusals.
 
 It is **built, flag-gated, and off by default** (`APF_SURROGATE_LABELS`).
-A local validation (2026-05-21, against the oMLX stack) confirmed surrogate
-mode **holds the tool-call boundary** — originals resolve correctly into tool
-args, nothing leaks. It works. Three reasons it still stays opt-in:
+End-to-end validation (2026-05-21, against a local OpenAI-compatible test
+engine) confirmed surrogate mode **holds the tool-call boundary** —
+originals resolve correctly into tool args, nothing leaks. It works. Three reasons it still stays opt-in:
 
 1. **Re-detection** — a surrogate is PII-shaped, so the detector flags it
    again on the next turn. Fixed (`apf-76m`: the masker skips known-surrogate

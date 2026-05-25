@@ -47,7 +47,7 @@ both stages and what we'd want to benchmark before committing.
 ### Nemotron Privacy Filter MLX (OpenMed) — already MLX, German-capable
 - Distributed as part of OpenMed (`pip install openmed[mlx]`). Multilingual including
   **German**. Targets HIPAA Safe Harbor categories plus general PII.
-- Native MLX — least friction on M5.
+- Native MLX — least friction on Apple Silicon.
 - May be over-fitted to medical text; benchmark on general dev-machine content
   (emails, calendar, code comments) before committing.
 
@@ -174,7 +174,7 @@ correct detection at the *tier* level, but lose precision at the *label* level.
 
 ### Decision criteria
 - Recall ≥ 0.95 on the fixture set in **both** German and English
-- p95 stage-2 latency ≤ 1.5 s on M5
+- p95 stage-2 latency ≤ 1.5 s on Apple Silicon
 - Combined RAM (stage 1 + stage 2) ≤ 4 GB resident
 
 If no candidate passes, fall back to a two-model ensemble or accept the weaker model and

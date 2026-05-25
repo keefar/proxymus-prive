@@ -120,8 +120,8 @@ in exactly this schema:
     --out model_profiles/my-model.toml
 ```
 
-`--endpoint` defaults to `http://127.0.0.1:8000` (oMLX on the dev machine);
-point it at any OpenAI-compatible Chat Completions server. `--api-key` adds a
+`--endpoint` defaults to `http://127.0.0.1:8000`; point it at any
+OpenAI-compatible Chat Completions server. `--api-key` adds a
 Bearer token if the endpoint needs one. `--mode demo` classifies built-in
 canned probe output with no network — a quick check that the tool works.
 

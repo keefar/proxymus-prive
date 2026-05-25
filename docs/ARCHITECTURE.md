@@ -6,9 +6,8 @@ pick between the options below. Recommendation at the bottom; not yet executed.
 ## Constraints
 
 - **Host:** any Apple Silicon Mac (M1 or newer). The README
-  hardware-requirements table lists per-ensemble footprints; a low-end
-  8 GB host runs the fast ensemble, 16 GB the default, 32 GB the full
-  generative pass beside a local daily-driver LLM.
+  hardware-requirements table lists per-ensemble footprints; an 8 GB
+  host runs the default ensemble comfortably.
 - **Inference:** MLX on Apple Silicon (Python ecosystem)
 - **Detection budget:** ≤ 4 GB combined RAM, ≤ 1.5 s p95 stage-2 latency
 - **First agent target:** Hermes + the OpenAI-compatible ecosystem (Cursor,
@@ -182,7 +181,7 @@ Four positions evaluated under the project-kickoff skill's framework:
 For that, a 200-line FastAPI proxy with a single message-format (Anthropic) and one agent
 (Claude Code) is enough. Don't take on someone else's design debt for a throwaway scaffold.
 
-**For the daily-driver phase: re-evaluate after PoC.** Likely path:
+**For the post-PoC production phase: re-evaluate after PoC.** Likely path:
 - If the MLX models work well and the tool-call resolver is feasible → **fork
   DontFeedTheAI** (closest conceptual match, Python, MIT) and port our PoC pieces in;
   retarget for multi-agent.
@@ -190,7 +189,7 @@ For that, a 200-line FastAPI proxy with a single message-format (Anthropic) and 
   shift to agent-side integration (Claude Code hooks, MCP wrappers) and use **contextio**
   or **PasteGuard** as the unmodified proxy plane; we contribute only the agent-side bits.
 
-The "from scratch for PoC, fork for daily driver" split is unusual but defensible here:
+The "from scratch for PoC, fork for production" split is unusual but defensible here:
 the unknowns we need to retire (does an MLX SLM detect German PII well enough? does
 tool-call resolution work?) live in code we'd write either way. The proxy plumbing only
 becomes worth inheriting once those unknowns are retired.
@@ -199,14 +198,14 @@ becomes worth inheriting once those unknowns are retired.
 
 **Will prove or disprove:**
 - MLX SLM PII detection quality on German + English coding-agent traffic
-- Combined memory / latency feasibility on the M5
+- Combined memory / latency feasibility on Apple Silicon
 - Whether tool-call resolution can be done in-proxy at all (or whether it needs
   agent-side integration)
 
 **Will not prove:**
 - Productionizability — error handling, multi-session vaults, SSE edge cases all live in
   Phase 2
-- Coverage across all the agents in the "daily driver" vision — Claude Code only for PoC
+- Coverage across all the agents in the production vision — Claude Code only for PoC
 
 ## Decision log
 
@@ -468,9 +467,9 @@ This retires Open question 1 from the wrong direction: the question was
 Claude Code the proxy cannot be in the path at all.
 
 **Decision.** The proxy is not abandoned — only its Claude-subscription
-path is. apf works unchanged for OpenAI-compatible / local agents (Hermes,
-Cursor, Aider, Codex, Cline, local models via oMLX), and the core —
-detector, vault, tool-call-boundary resolution — is auth-agnostic.
+path is. apf works unchanged for OpenAI-compatible agents (Hermes,
+Cursor, Aider, Codex, Cline), and the core — detector, vault,
+tool-call-boundary resolution — is auth-agnostic.
 
 - **First agent target shifts from Claude Code to Hermes** + the
   OpenAI-compatible ecosystem. Develop and release there.

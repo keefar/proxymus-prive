@@ -94,7 +94,7 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
 ## Constraints
 
 - Apple Silicon / MLX-first (PoC scope)
-- Combined filter RAM ≤ 4 GB (so it can co-exist with the user's 35B-4bit daily driver)
+- Combined filter RAM ≤ 4 GB (small enough to leave headroom on an 8 GB host)
 - Stage-2 p95 latency ≤ 1.5 s
 - Detection recall: realistically **~0.75–0.82** tier-equality on the fixture set
   (no German/English gap). The earlier "≥ 0.95" figure was aspirational — span-NER

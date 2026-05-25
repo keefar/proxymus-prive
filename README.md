@@ -24,23 +24,23 @@ ever sent anywhere for detection.
 > proxied subscription OAuth — see the 2026-05-22 entry in the
 > [decision log of `docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for
 > the full reason. OpenAI-compatible agents (Hermes, Cursor, Aider,
-> Codex, Cline, local oMLX) are unaffected.
+> Codex, Cline) are unaffected.
 
 ## Hardware requirements
 
-proxymus runs on any Apple Silicon Mac — M1 or newer. It scales down
-to low-RAM configurations; pick the ensemble that fits your machine
-(switch by setting the adapter when running the proxy):
+Any Apple Silicon Mac (M1 or newer). Pick the detector ensemble that
+fits your machine — switch by setting the adapter when running the
+proxy:
 
-| Ensemble                  | Roughly resident | What's in it                                                                | Comfortable on                                                       |
-|---------------------------|-----------------:|-----------------------------------------------------------------------------|----------------------------------------------------------------------|
-| `ensemble-fast`           |         ~600 MB | regex + GLiNER multi-PII                                                    | M1 / **8 GB Mac** — still leaves room for an editor, browser, agent  |
-| `ensemble-max` *(default)* |         ~1.5 GB | regex + Presidio + 2× GLiNER + locked-category regex                        | M-series / **16 GB Mac** — comfortable headroom for a local LLM      |
-| `ensemble-full`           |           ~3 GB | above **+** AnonymizerSLM 1.7 B (4-bit, MLX) — generative pass for implicit / paraphrased PII | M-series / **32 GB Mac** — fits beside a 35 B 4-bit daily-driver model |
+| Ensemble                   | Resident | What it adds                                                  |
+|----------------------------|---------:|---------------------------------------------------------------|
+| `ensemble-fast`            |  ~600 MB | regex + GLiNER multi-PII                                      |
+| `ensemble-max` *(default)* |  ~1.5 GB | + Presidio + a second GLiNER + locked-category regex          |
+| `ensemble-full`            |    ~3 GB | + AnonymizerSLM 1.7 B (4-bit, MLX) — generative pass for implicit / paraphrased PII |
 
-Combined filter footprint stays **≤ 4 GB** even at the full ensemble.
-On a 32 GB host with a 35 B 4-bit daily-driver model also loaded, the
-remaining headroom is still ≥ 8 GB.
+Even at the full ensemble the filter stays **≤ 4 GB** resident, so an
+8 GB Mac runs the fast and default ensembles comfortably while the
+machine is otherwise in normal use.
 
 Linux / Windows are not first-class targets (MLX is Apple Silicon), but
 the regex + GLiNER + Presidio path runs on PyTorch + MPS / CPU and is
@@ -61,9 +61,8 @@ benchmarks/`). Smoke runner spins the proxy in-process
 
 What still needs work: detector precision tuning (`PERSON` false
 positives), audit-log persistence, and the implicit-PII UX confirmation
-flag. Daily-driver validation through a real agent is done —
-[Hermes](https://hermes-agent.nousresearch.com/) → apf →
-[oMLX](https://omlx.ai/), end to end.
+flag. End-to-end agent validation through
+[Hermes](https://hermes-agent.nousresearch.com/) is done.
 [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) §9 has the honest
 open-issues list.
 

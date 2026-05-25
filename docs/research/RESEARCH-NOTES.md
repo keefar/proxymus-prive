@@ -67,28 +67,26 @@ sensitive local files. Hardening the agent's read scope (sandbox, denylist for
 `~/.ssh`, `~/Library/Mail`, calendar DBs, etc.) is a separate, complementary control.
 "Defense in depth" — not part of this project's PoC scope, but worth flagging.
 
-## Why a small specialized model beats a 35B daily driver here
+## Why a small specialized model beats a large generalist here
 
-User's daily-driver is a 35B-4bit Qwen with 64k context. For this task it's the wrong
-tool — not just because of speed:
+A 30 B-class generalist LLM is the wrong tool for the PII-filter hot
+path — not just because of speed:
 
 1. **Hot path.** The filter runs on every request. Latency compounds.
 2. **Specialized beats generalist at small sizes.** Anonymizer-SLM 1.7B reportedly matches
-   GPT-4.1 (≈9.55/10 LLM-judge) at PII replacement — ~1000× smaller than GPT-4.1, 20× smaller
-   than the daily driver.
+   GPT-4.1 (≈9.55/10 LLM-judge) at PII replacement — ~1000× smaller than GPT-4.1.
 3. **Predictability.** Specialized SLMs drift and hallucinate less than large generalists
    on narrow tasks. For a security filter, predictability matters more than ceiling
    capability.
 
-The 35B stays the assistant. The filter is a small, dedicated model — or two (NER + SLM).
+The filter is therefore a small, dedicated model — or two (NER + SLM)
+— independent of whatever the user happens to use as their assistant.
 
-## Hardware sanity check (Apple Silicon, 32 GB)
+## Hardware sanity check (Apple Silicon)
 
 - GLiNER (BERT-base-class NER, quantized ONNX): hundreds of MB, CPU/ANE
 - Small rewriter SLM 1.7–4B in 4-bit: ~1–3 GB on MLX
 - Combined filter footprint: ≤ 4 GB
-- With the 35B (~20 GB) loaded, still ≥ 8 GB headroom — and in practice the filter and the
-  daily driver are different workflows, rarely simultaneously hot
 - Latency target: < 1 s for the SLM step (documented for Anonymizer-SLM 1.7B at ~250 ms
   TTFT, < 1 s total)
 - Thermal: fanless Air; filter alone is fine, sustained dual-model use will throttle —
