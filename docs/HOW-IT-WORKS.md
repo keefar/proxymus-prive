@@ -232,7 +232,7 @@ over-masking is not free (see §8.4), so precision still matters.
 |---|---|---|
 | No single model reaches 0.95 recall | best generative SLM topped out at **0.36** tier-recall | **mitigated** — the ensemble reaches 0.82 (synthetic) / 0.77 (ai4privacy-300k) |
 | Tier-C secret recall was the weak point | **0.57** recall — secret leaks are the most expensive failure | **fixed** — regex expansion for PEM blocks, `KEY=VALUE`, Bearer tokens, DSN strings, base64 heuristic lifted Tier-C to **0.94** (`apf-1qo`) |
-| Implicit / paraphrased PII | "der Kollege aus dem Controlling, der nächste Woche heiratet" — combined recall under 0.1 for early single models | **structural limit** — the ensemble + GLiNER closes much of it, but a local small-model setup cannot reliably classify implicit PII without world knowledge. Mitigated by a low-confidence UX flag, not by a tuning knob |
+| Implicit / paraphrased PII | "der Kollege aus dem Controlling, der nächste Woche heiratet" — combined recall under 0.1 for early single models | **structural limit** — the ensemble + GLiNER closes much of it, but span-NER cannot reliably classify implicit PII without world knowledge. Two opt-in routes lift recall further at a known cost: `ensemble-full` adds AnonymizerSLM 1.7 B in-process (Apple Silicon only, +1.5 GB resident); `[detector.generative_stage]` in `~/.config/apf/config.toml` delegates to any local OpenAI-compatible daemon (Ollama / oMLX / LM Studio / vLLM, cross-platform — `apf-yyz`). Neither is on by default: deterministic detectors give the Tier-A guarantee, the generative pass is a recall booster |
 
 ### 8.3 Round-trip integrity bugs
 
