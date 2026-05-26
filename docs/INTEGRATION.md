@@ -8,8 +8,12 @@ local env / vault at the tool-call boundary.
 
 ## Prerequisites
 
-- An Apple Silicon Mac (not strictly required for the MLX models —
-  GLiNER + Presidio use PyTorch + MPS, so other GPUs work too).
+- A host machine running **macOS (Apple Silicon)**, **Linux**, or
+  **Windows** (WSL2 recommended). The production detector ensemble
+  (regex + Presidio + GLiNER) runs on PyTorch (CPU / CUDA / MPS) and is
+  cross-platform. The optional `ensemble-full` adapter uses MLX and
+  requires Apple Silicon — it is auto-skipped on other platforms via
+  pip environment markers in `requirements.txt`.
 - Python 3.13 + a venv with the dependencies installed:
   ```bash
   python3.13 -m venv .venv

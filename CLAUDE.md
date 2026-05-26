@@ -5,14 +5,18 @@ Quick-orient for any Claude session entering this repo. Read top to bottom befor
 ## What this is
 
 A local privacy filter for coding agents (Claude Code, Cursor, Aider, …) — intercepts
-outgoing traffic, detects PII via a small MLX-hosted model + deterministic detector,
-swaps it for stable placeholders before it leaves the machine, restores originals in
-incoming responses. **Target hardware:** any Apple Silicon Mac (M1 or
-newer); filter footprint stays ≤ 4 GB so it co-exists with a separate
-local LLM. The README hardware-requirements table is authoritative.
+outgoing traffic, detects PII via a deterministic regex layer plus PyTorch-hosted
+NER models (Presidio + GLiNER); on Apple Silicon an optional MLX generative pass
+(`ensemble-full`) joins the ensemble. Originals restored in incoming responses.
+**Target hardware:** Apple Silicon Mac (primary), Linux (supported — `mlx`
+pip-markered out, GLiNER+Presidio path is platform-neutral), Windows via WSL2
+(untested in CI; native Windows nice-to-have). Filter footprint stays ≤ 4 GB so it
+co-exists with a separate local LLM. The README hardware-requirements table is
+authoritative.
 
 **Current status:** working PoC. FastAPI proxy (Anthropic Messages + OpenAI Chat
-Completions, both streaming), MLX detector ensemble, vault round-trip, tool-call
+Completions, both streaming), PyTorch-hosted detector ensemble (regex + Presidio +
+GLiNER; MLX generative pass optional on Apple Silicon), vault round-trip, tool-call
 boundary resolution — shipped with a green test suite. Past the research stage.
 
 **Delivery constraint (apf-dtq, 2026-05-22):** routing some hosted-agent

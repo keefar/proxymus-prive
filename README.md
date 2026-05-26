@@ -28,23 +28,28 @@ ever sent anywhere for detection.
 
 ## Hardware requirements
 
-Any Apple Silicon Mac (M1 or newer). Pick the detector ensemble that
-fits your machine — switch by setting the adapter when running the
-proxy:
+Apple Silicon Mac (M1 or newer) is the primary development target.
+Linux is supported via the same `pip install -r requirements.txt` —
+the production detector ensemble runs on PyTorch (CPU / CUDA / MPS).
+Windows is untested in CI but should work the same way; WSL2 is the
+pragmatic path. Pick the detector ensemble that fits your machine —
+switch by setting the adapter when running the proxy:
 
-| Ensemble                   | Resident | What it adds                                                  |
-|----------------------------|---------:|---------------------------------------------------------------|
-| `ensemble-fast`            |  ~600 MB | regex + GLiNER multi-PII                                      |
-| `ensemble-max` *(default)* |  ~1.5 GB | + Presidio + a second GLiNER + locked-category regex          |
-| `ensemble-full`            |    ~3 GB | + AnonymizerSLM 1.7 B (4-bit, MLX) — generative pass for implicit / paraphrased PII |
+| Ensemble                   | Resident | What it adds                                                                              | Platforms        |
+|----------------------------|---------:|-------------------------------------------------------------------------------------------|------------------|
+| `ensemble-fast`            |  ~600 MB | regex + GLiNER multi-PII                                                                  | macOS, Linux, Windows |
+| `ensemble-max` *(default)* |  ~1.5 GB | + Presidio + a second GLiNER + locked-category regex                                      | macOS, Linux, Windows |
+| `ensemble-full`            |    ~3 GB | + AnonymizerSLM 1.7 B (4-bit, MLX) — generative pass for implicit / paraphrased PII       | Apple Silicon only |
 
 Even at the full ensemble the filter stays **≤ 4 GB** resident, so an
 8 GB Mac runs the fast and default ensembles comfortably while the
 machine is otherwise in normal use.
 
-Linux / Windows are not first-class targets (MLX is Apple Silicon), but
-the regex + GLiNER + Presidio path runs on PyTorch + MPS / CPU and is
-portable in principle — not actively tested.
+`mlx` and `mlx-lm` are listed in `requirements.txt` with pip
+environment markers (`sys_platform == "darwin" and platform_machine ==
+"arm64"`), so they install automatically on Apple Silicon and are
+skipped silently elsewhere — Linux / Windows installs succeed without
+manual flag handling.
 
 **New here?** [`docs/HOW-IT-WORKS.md`](docs/HOW-IT-WORKS.md) walks the
 pipeline end to end and gives an honest ledger of what was hard to build
@@ -55,7 +60,7 @@ Anthropic Messages **and** OpenAI Chat Completions, SSE streaming wired,
 opaque `<REF_N>` (or per-model surrogate) masking with stable per-session
 IDs, secret resolver hook at the tool-call boundary, a regex + Presidio +
 GLiNER ensemble detector, endpoint trust map, off-by-default audit-log
-scaffold. 279 tests, all green (`.venv/bin/python -m pytest apf/
+scaffold. 281 tests, all green (`.venv/bin/python -m pytest apf/
 benchmarks/`). Smoke runner spins the proxy in-process
 (`.venv/bin/python -m apf.manual_smoke`).
 
@@ -71,8 +76,9 @@ open-issues list.
 Similar projects exist (see [`docs/research/EXISTING-SOLUTIONS.md`](docs/research/EXISTING-SOLUTIONS.md)).
 None of them combine all four of the things this project is exploring:
 
-1. **Local NER models on Apple Silicon** for context-aware PII detection
-   — beyond plain regex, adding zero-shot GLiNER for paraphrased / implicit PII
+1. **Local NER models** for context-aware PII detection — beyond plain
+   regex, adding zero-shot GLiNER for paraphrased / implicit PII
+   (runs on Apple Silicon, Linux, Windows — see hardware section)
 2. **Reversible** round-trip (anonymize → LLM → de-anonymize)
 3. **Multi-agent** (not tied to one tool)
 4. **Tool-call resolution at the tool boundary** — the open problem nobody has solved:
@@ -103,7 +109,8 @@ None of them combine all four of the things this project is exploring:
 - Replacing the cloud LLM (this is a *filter*, not a local-inference proxy — see
   [claude-code-local][ccl] / [Rapid-MLX][rm] for that)
 - Compliance certification (HIPAA, GDPR audit) — useful direction later, not PoC concern
-- Windows / Linux first-class support — Apple Silicon / MLX is the PoC target
+- Windows native CI / packaging — works via WSL2; Apple Silicon and Linux are
+  the actively tested platforms
 
 [ccl]: https://github.com/nicedreamzapp/claude-code-local
 [rm]: https://github.com/raullenchai/Rapid-MLX
@@ -148,11 +155,11 @@ session logs are kept locally rather than in the public repo.)
 ## Running
 
 ```bash
-# one-time setup (Python 3.13, Apple Silicon)
+# one-time setup (Python 3.13; macOS / Linux / Windows)
 python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# tests (279, sub-second)
+# tests (281, sub-second)
 .venv/bin/python -m pytest apf/ benchmarks/
 
 # standalone demo: detector → mask → simulated round-trip → restore

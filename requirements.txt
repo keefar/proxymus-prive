@@ -12,10 +12,13 @@ fastapi==0.136.1
 uvicorn==0.47.0
 httpx==0.28.1
 
-# Detector ensemble (MLX-hosted) — Apple Silicon only.
-# mlx-lm pulls in mlx; transformers hosts the GLiNER / Presidio NER path.
-mlx==0.31.2
-mlx-lm==0.31.3
+# Detector ensemble.
+# Production path (GLiNER + Presidio + regex) runs on `transformers` and is
+# cross-platform. `mlx` / `mlx-lm` host optional/experimental generative
+# adapters (Nemotron, Qwen3, Anonymizer) — only installable on Apple Silicon,
+# pip markers skip them automatically on Linux / Windows / Intel Mac.
+mlx==0.31.2 ; sys_platform == "darwin" and platform_machine == "arm64"
+mlx-lm==0.31.3 ; sys_platform == "darwin" and platform_machine == "arm64"
 transformers==5.1.0
 
 # Test suite:  .venv/bin/python -m pytest apf/ benchmarks/
