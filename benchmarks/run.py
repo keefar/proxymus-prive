@@ -27,6 +27,16 @@ try:
 except ImportError:
     pass
 
+# HTTP-backed adapters (Ollama / oMLX / LM Studio / llama.cpp-server /
+# vLLM via OpenAI Chat Completions). Cross-platform pure httpx; the
+# import only fails if httpx is unavailable, which would already break
+# the proxy itself.
+try:
+    from . import adapters_http as _http
+    _http.register(ADAPTERS)
+except ImportError:
+    pass
+
 # Vendored DontFeedTheAI regex detector — only registers if submodule present.
 try:
     from . import adapters_dfta as _dfta

@@ -9,6 +9,8 @@ adapters in `apf-4f4.5..7`).
 ```
 benchmarks/
 ├── adapters.py            ← Detector protocol + RegexBaseline (mock floor)
+├── adapters_mlx.py        ← Apple-Silicon-only generative + GLiNER + Presidio adapters
+├── adapters_http.py       ← OpenAI-compatible HTTP detector (Ollama/oMLX/LM Studio/…)
 ├── metrics.py             ← tier-equality + label-equality scoring, per-slice aggregation
 ├── run.py                 ← entry point: load, run, score, dump JSON
 ├── model_conformance.py   ← apf-vh8: probe an upstream model, classify its
@@ -50,6 +52,33 @@ python -m benchmarks.run --adapter regex --output - | jq .
 
 Default fixture set is all three buckets. Results go to
 `benchmarks/results/<adapter>.json` (gitignored — re-run any time).
+
+## External generative detector via HTTP (`openai-compat`)
+
+The `openai-compat` adapter drives any OpenAI-Chat-Completions–speaking
+daemon — Ollama, oMLX, LM Studio, llama.cpp-server, vLLM — as a
+generative PII detector. Cross-platform (pure httpx; works on Linux,
+Windows, macOS).
+
+Config is taken from env vars (the benchmark harness has no per-adapter
+CLI):
+
+```bash
+# Default targets a local Ollama daemon — adjust to suit your setup.
+export APF_GEN_DETECTOR_ENDPOINT="http://127.0.0.1:11434/v1"
+export APF_GEN_DETECTOR_MODEL="qwen2.5:1.5b-instruct-q4_K_M"
+# Optional:
+# export APF_GEN_DETECTOR_API_KEY="..."         # for hosted/locked daemons
+# export APF_GEN_DETECTOR_TIMEOUT_S="30"
+# export APF_GEN_DETECTOR_MAX_TOKENS="512"
+
+python -m benchmarks.run --adapter openai-compat
+```
+
+The adapter prompts the model with the same JSON-span contract as
+`Qwen3Adapter` in `adapters_mlx.py`; output is parsed and offsets are
+recovered by searching the input. Production / proxy integration goes
+through model profiles (tracked separately — see beads `apf-yyz`).
 
 ## Scoring
 
