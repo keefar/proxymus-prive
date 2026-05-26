@@ -49,6 +49,44 @@ curl http://127.0.0.1:8765/healthz
 #  "upstream":"https://api.anthropic.com"}
 ```
 
+### Optional: generative detector stage (HTTP)
+
+The default `ensemble-max` pipeline (regex + Presidio + GLiNER ×2 +
+locked-category) handles explicit PII reliably but cannot catch
+*implicit* / paraphrased PII (the colleague-from-Controlling-who-is-
+getting-married case). A generative detector closes that gap. Instead
+of running it in-process (the MLX-only `ensemble-full` route), apf can
+delegate to any locally-running OpenAI-compatible daemon — **Ollama**,
+**oMLX**, **LM Studio**, **llama.cpp-server**, **vLLM**, etc. — over
+HTTP. Cross-platform; the daemon owns model download and lifecycle.
+
+Opt in by creating `~/.config/apf/config.toml`:
+
+```toml
+[detector.generative_stage]
+endpoint    = "http://127.0.0.1:11434/v1"     # Ollama default
+model       = "qwen2.5:1.5b-instruct-q4_K_M"  # whatever your daemon serves
+api_key_env = "DETECTOR_API_KEY"               # optional, env var name
+timeout_s   = 30                               # optional, default 30
+max_tokens  = 512                              # optional, default 512
+```
+
+Setting the section is the opt-in — no further flags needed. The proxy
+adds the HTTP detector as an extra stage of the production ensemble.
+Behaviour:
+
+- **Startup**: the proxy refuses to come up if the daemon is unreachable
+  or the model is wrong (hard-fail, so misconfig surfaces early).
+- **Per request**: if the daemon times out or errors on a single turn,
+  that stage returns no spans for the turn and a failure counter
+  increments; the request still flows. Use it as a recall booster, not
+  as a privacy-critical layer — Tier-A guarantees come from the
+  deterministic detectors below it.
+
+The same adapter is also available to the benchmark harness as
+`openai-compat` — see `benchmarks/README.md` for the env-var contract
+when benchmarking against a real daemon.
+
 ## Configuring Claude Code
 
 ```bash

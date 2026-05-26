@@ -482,10 +482,17 @@ def _mask_request_body(body: dict, vault: Vault) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Warm up the detector once at startup."""
+    """Warm up the detector once at startup.
+
+    The default is the production EnsembleMax. If the user has opted
+    into a generative stage via ``[detector.generative_stage]`` in
+    ``~/.config/apf/config.toml``, the returned detector is a
+    composite of EnsembleMax + an HTTP-backed generative detector
+    (Ollama / oMLX / LM Studio / llama.cpp-server / vLLM).
+    """
     global _DETECTOR
-    from benchmarks.adapters_mlx import EnsembleMaxAdapter
-    _DETECTOR = EnsembleMaxAdapter()
+    from .detector_stage import build_proxy_detector
+    _DETECTOR = build_proxy_detector()
     _DETECTOR.warmup()
     yield
 
