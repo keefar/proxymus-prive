@@ -48,6 +48,10 @@ live outside the public repo (kept locally; see `.gitignore` for the list).
 (`EnsembleMaxAdapter`) — the proxy imports it from `benchmarks/`, not `apf/`.
 Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
 (older issues and docs say "tokenize" — same operation, renamed in apf-ocq).
+The proxy's `_DETECTOR` is built by `apf/detector_stage.build_proxy_detector()`
+(apf-yyz), not instantiated directly — without opt-in config that returns the
+bare EnsembleMax, with `[detector.generative_stage]` set it returns a
+`CompositeDetector(EnsembleMax + SoftDegradeWrapper(http))`.
 
 ## Hard rules
 
@@ -94,10 +98,12 @@ Placeholders are `<REF_N>` / `<REF>`; the masking verbs are `mask` / `unmask`
 - `curl 127.0.0.1:8765/v1/sessions/<id>/status` — vault counts (no originals leaked) — the diagnostic of choice when the upstream LLM has no request log
 - **Unit-testing masking offline:** `proxy._DETECTOR` is set in the FastAPI lifespan — monkeypatch it with a span-returning stub (see `apf/skip_labels_test.py`) to test `_mask_text` without the MLX model. For proxy HTTP-path tests (streaming, error propagation), also patch `proxy.httpx.AsyncClient` and use `TestClient` *without* its context manager (skips the lifespan/MLX load) — see `apf/stream_error_test.py`.
 - **Local-loopback gotcha:** `127.0.0.1` defaults to `POLICY_OFF` (no filtering) per `apf/endpoint_policy.py`. For local-test rigs override via `~/.config/apf/endpoints.toml` — see [`docs/INTEGRATION.md`](docs/INTEGRATION.md) "Local-loopback testing".
+- **Optional generative HTTP stage:** `[detector.generative_stage]` in `~/.config/apf/config.toml` (env-override via `APF_CONFIG`) opts into an external OpenAI-compat detector (Ollama / oMLX / LM Studio / vLLM) on top of EnsembleMax. Failure semantics: warmup hard-fails, per-detect soft-degrades with counter on the wrapper. See `apf/detector_config.py` + `apf/detector_stage.py` (apf-yyz).
 
 ## Constraints
 
-- Apple Silicon / MLX-first (PoC scope)
+- Apple Silicon primary; Linux supported (mlx pip-markered out, GLiNER+Presidio+regex
+  path runs on PyTorch CPU/CUDA/MPS); Windows via WSL2 (untested in CI)
 - Combined filter RAM ≤ 4 GB (small enough to leave headroom on an 8 GB host)
 - Stage-2 p95 latency ≤ 1.5 s
 - Detection recall: realistically **~0.75–0.82** tier-equality on the fixture set
@@ -142,6 +148,7 @@ bd close <id>         # Complete work
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
 - Writing `bd --notes`/`--description` from Bash: **no backticks** in the string — the shell command-substitutes them and corrupts the note. Plain text only.
+- `bd dep add <task> <epic>` fails — only task→task dependencies allowed. Reference the epic in the task's description/notes instead, and use `bd update <epic> --notes "…subtask apf-XXX…"` to keep the epic's child list current.
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
