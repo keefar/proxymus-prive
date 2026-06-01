@@ -31,9 +31,12 @@ ever sent anywhere for detection.
 Apple Silicon Mac (M1 or newer) is the primary development target.
 Linux is supported via the same `pip install -r requirements.txt` —
 the production detector ensemble runs on PyTorch (CPU / CUDA / MPS).
-Windows is untested in CI but should work the same way; WSL2 is the
-pragmatic path. Pick the detector ensemble that fits your machine —
-switch by setting the adapter when running the proxy:
+Windows: the same `pip install`, plus a stdlib-only restart helper
+(`python scripts/apf_restart.py`) and `%APPDATA%\apf\` for config —
+no CI on Windows yet, but the path/process layers are platform-aware
+(apf-d6y). WSL2 stays the most-tested path. Pick the detector ensemble
+that fits your machine — switch by setting the adapter when running the
+proxy:
 
 | Ensemble                   | Resident | What it adds                                                                              | Platforms        |
 |----------------------------|---------:|-------------------------------------------------------------------------------------------|------------------|
@@ -60,7 +63,7 @@ Anthropic Messages **and** OpenAI Chat Completions, SSE streaming wired,
 opaque `<REF_N>` (or per-model surrogate) masking with stable per-session
 IDs, secret resolver hook at the tool-call boundary, a regex + Presidio +
 GLiNER ensemble detector, endpoint trust map, off-by-default audit-log
-scaffold. 281 tests, all green (`.venv/bin/python -m pytest apf/
+scaffold. 322 tests, all green (`.venv/bin/python -m pytest apf/
 benchmarks/`). Smoke runner spins the proxy in-process
 (`.venv/bin/python -m apf.manual_smoke`).
 
@@ -109,8 +112,9 @@ None of them combine all four of the things this project is exploring:
 - Replacing the cloud LLM (this is a *filter*, not a local-inference proxy — see
   [claude-code-local][ccl] / [Rapid-MLX][rm] for that)
 - Compliance certification (HIPAA, GDPR audit) — useful direction later, not PoC concern
-- Windows native CI / packaging — works via WSL2; Apple Silicon and Linux are
-  the actively tested platforms
+- Windows native CI / packaging — code is platform-aware (paths +
+  restart helper land on Windows since apf-d6y), but CI runs on
+  Apple Silicon + Linux only; WSL2 stays the most-tested Windows path
 
 [ccl]: https://github.com/nicedreamzapp/claude-code-local
 [rm]: https://github.com/raullenchai/Rapid-MLX
@@ -155,11 +159,11 @@ session logs are kept locally rather than in the public repo.)
 ## Running
 
 ```bash
-# one-time setup (Python 3.13; macOS / Linux / Windows)
+# one-time setup (Python 3.13; macOS / Linux)
 python3.13 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# tests (281, sub-second)
+# tests (322, sub-second)
 .venv/bin/python -m pytest apf/ benchmarks/
 
 # standalone demo: detector → mask → simulated round-trip → restore
@@ -171,6 +175,12 @@ python3.13 -m venv .venv
 # live smoke: sends to real Anthropic API
 .venv/bin/python -m apf.manual_smoke --live --model claude-haiku-4-5
 ```
+
+On Windows (PowerShell), the venv layout differs — substitute
+`.venv\Scripts\python.exe` and `.venv\Scripts\pip.exe` for the
+POSIX paths above; everything else is the same. Config lives in
+`%APPDATA%\apf\` instead of `~/.config/apf/`, or override on any
+platform with the `APF_CONFIG_DIR` env var (apf-d6y).
 
 ## Next steps
 
