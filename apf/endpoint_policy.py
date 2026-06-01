@@ -75,7 +75,8 @@ def _load_user_overrides() -> dict[str, str]:
     if path_env:
         path = Path(path_env).expanduser()
     else:
-        path = Path.home() / ".config" / "apf" / "endpoints.toml"
+        from ._paths import config_dir
+        path = config_dir() / "endpoints.toml"
     if not path.exists():
         return {}
     try:

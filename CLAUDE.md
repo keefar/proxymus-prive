@@ -83,7 +83,9 @@ bare EnsembleMax, with `[detector.generative_stage]` set it returns a
 - `.venv/bin/python -m scripts.cloud_toolcall --system {off,explainer}` — drives
   real Claude Code (`claude -p`) through apf; tool-call behaviour on the cloud target
 - `scripts/apf_restart.sh [restart|stop|status]` — restart apf wired to a chosen
-  OpenAI upstream (oMLX by default); lets a session restart the proxy itself
+  OpenAI upstream (oMLX by default); lets a session restart the proxy itself.
+  Cross-platform equivalent: `python scripts/apf_restart.py [restart|stop|status]`
+  (same env vars, stdlib-only, runs on Windows without WSL2 — apf-d6y)
 - **Cloud-test routing — note on hosted-agent subscription auth (apf-dtq):**
   hosted-agent subscription tokens (the kind issued to an agent's first-party
   client) may be rejected when proxied — they're verified against direct-from-

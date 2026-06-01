@@ -186,7 +186,8 @@ def _user_config_path() -> Path:
     path_env = os.environ.get("APF_MODEL_PROFILE_CONFIG")
     if path_env:
         return Path(path_env).expanduser()
-    return Path.home() / ".config" / "apf" / "model_profiles.toml"
+    from ._paths import config_dir
+    return config_dir() / "model_profiles.toml"
 
 
 def _load_user_overrides() -> dict[str, ModelProfile]:

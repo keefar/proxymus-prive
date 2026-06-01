@@ -60,7 +60,8 @@ delegate to any locally-running OpenAI-compatible daemon — **Ollama**,
 **oMLX**, **LM Studio**, **llama.cpp-server**, **vLLM**, etc. — over
 HTTP. Cross-platform; the daemon owns model download and lifecycle.
 
-Opt in by creating `~/.config/apf/config.toml`:
+Opt in by creating `~/.config/apf/config.toml` (Windows: `%APPDATA%\apf\config.toml`;
+override on any platform with the `APF_CONFIG_DIR` env var — apf-d6y):
 
 ```toml
 [detector.generative_stage]

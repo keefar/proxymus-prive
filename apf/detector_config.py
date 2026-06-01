@@ -31,7 +31,8 @@ def _config_path() -> Path:
     override = os.environ.get("APF_CONFIG")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".config" / "apf" / "config.toml"
+    from ._paths import config_dir
+    return config_dir() / "config.toml"
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
